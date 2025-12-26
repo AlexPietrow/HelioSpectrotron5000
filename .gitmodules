@@ -1,0 +1,3 @@
+[submodule "ISPy"]
+	path = ISPy
+	url = https://github.com/ISP-SST/ISPy

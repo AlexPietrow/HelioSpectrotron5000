@@ -4,5 +4,3 @@ wheel
 
 fastapi
 uvicorn
-
-git+https://github.com/ISP-SST/ISPy
