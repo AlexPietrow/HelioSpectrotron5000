@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+numpy
+scipy
+astropy
+git+https://github.com/ISP-SST/ISPy

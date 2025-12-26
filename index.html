@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spectrum Viewer</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #fafafa; }
+    header { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #ddd; padding: 10px 12px; z-index: 10; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .small { color: #555; font-size: 13px; }
+    .btn { padding: 6px 10px; border: 1px solid #bbb; border-radius: 6px; background: #f7f7f7; cursor: pointer; }
+    .btn.sel { background: #111; color: #fff; border-color: #111; }
+    .btn:active { background: #eee; }
+    input { padding: 6px 8px; border: 1px solid #bbb; border-radius: 6px; width: 75px; }
+    .viewer-wrap { padding: 12px; }
+    .viewer {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      user-select: none;
+    }
+    .viewer img { display: block; width: 100%; height: auto; }
+    .status { padding: 8px 12px; border-top: 1px solid #eee; font-size: 13px; color: #444; display: flex; gap: 14px; flex-wrap: wrap; }
+    code { background: #f2f2f2; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <div><strong>Spectrum Viewer</strong></div>
+      <div class="small">
+        Range: <span id="wmin"></span>–<span id="wmax"></span> Å •
+        Window: <span id="widthDisp"></span> Å •
+        R@500nm: <span id="rDisp"></span> •
+        Tellurics: <span id="altDisp"></span> •
+        Labels: <span id="labelsDisp"></span>
+      </div>
+    </div>
+
+    <!-- ROW 1: pan + jump + labels + zoom + window (moved up) -->
+    <div class="row" style="margin-top:8px;">
+      <button class="btn" id="btnLeft">◀</button>
+      <button class="btn" id="btnRight">▶</button>
+      
+      <span class="small">Pan step (Å):</span>
+      <input id="panstep" type="number" step="0.1" />
+
+      <span class="small">Jump to center Å:</span>
+      <input id="jumpc" type="number" step="0.1" />
+      <button class="btn" id="btnJumpC">Center</button>
+
+      <span class="small">Labels:</span>
+      <button class="btn" id="btnLabels">On</button>
+
+      <span class="small" style="margin-left:10px;">Zoom:</span>
+      <button class="btn" id="z1">×1</button>
+      <button class="btn" id="z2">×2</button>
+      <button class="btn" id="z4">×4</button>
+
+      <span class="small" style="margin-left:10px;">Window (Å):</span>
+      <input id="win" type="number" step="0.5" />
+      <button class="btn" id="btnWin">Set</button>
+    </div>
+
+    <!-- ROW 2: resolution + altitude -->
+    <div class="row" style="margin-top:8px;">
+      <span class="small">Resolution (R@500nm):</span>
+      <button class="btn" id="r20k">20k</button>
+      <button class="btn" id="r40k">40k</button>
+      <button class="btn" id="r100k">100k</button>
+      <button class="btn" id="r200k">200k</button>
+      <button class="btn" id="rInf">∞</button>
+
+      <span class="small">R:</span>
+      <input id="rin" type="number" step="1000" />
+      <button class="btn" id="btnR">Set R</button>
+
+      <span class="small" style="margin-left:10px;">Tellurics altitude:</span>
+      <button class="btn" id="alt0">Sea level</button>
+      <button class="btn" id="alt2500">2500 m</button>
+
+      <span class="small">Arrows pan • Shift = faster • Hover shows λ</span>
+    </div>
+  </header>
+
+  <div class="viewer-wrap">
+    <div class="viewer" id="viewer">
+      <img id="img" alt="Spectrum segment" />
+      <div class="status">
+        <div>Start: <code id="start"></code> Å</div>
+                <div>λ(mouse): <code id="mouseLam">—</code></div>
+        <div>URL: <code id="url"></code></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Injected by backend.py
+  const WMIN  = __WMIN__;
+  const WMAX  = __WMAX__;
+  const DEFAULT_WIDTH = __WIDTH__;
+  const DEFAULT_STEP  = __STEP__;
+  const DEFAULT_R500  = __R500__;
+
+  // Always start centered at Hα
+  const DEFAULT_CENTER_A = 6563.0;
+
+  // Sentinel for "infinite" resolution (backend treats >=1e8 as no smoothing)
+  const R_INF = 1e12;
+
+  document.getElementById("wmin").textContent = WMIN.toFixed(2);
+  document.getElementById("wmax").textContent = WMAX.toFixed(2);
+
+  const widthDispEl  = document.getElementById("widthDisp");
+  const rDispEl      = document.getElementById("rDisp");
+  const altDispEl    = document.getElementById("altDisp");
+  const labelsDispEl = document.getElementById("labelsDisp");
+
+  const imgEl    = document.getElementById("img");
+  const viewerEl = document.getElementById("viewer");
+  const startEl  = document.getElementById("start");
+const urlEl    = document.getElementById("url");
+  const mouseLamEl = document.getElementById("mouseLam");
+
+  const panStepInput = document.getElementById("panstep");
+  const winInput     = document.getElementById("win");
+  const rInput       = document.getElementById("rin");
+  const jumpCInput   = document.getElementById("jumpc");
+  const btnLabels    = document.getElementById("btnLabels");
+
+  // State
+  let widthA  = DEFAULT_WIDTH;
+
+  // Force initial "∞" regardless of backend injection
+  let R500    = R_INF;
+
+  // Altitude in meters: 0 or 2500
+  let alt_m   = 2500;
+
+  // Label toggle
+  let labelsOn = true;
+
+  // Start centered at 6563 Å
+  let start = DEFAULT_CENTER_A - (widthA / 2);
+
+  function clampStart(s) {
+    const maxStart = WMAX - widthA;
+    return Math.max(WMIN, Math.min(maxStart, s));
+  }
+
+  function centerA() {
+    return start + (widthA / 2);
+  }
+
+  function updateHud() {
+    widthDispEl.textContent  = widthA.toFixed(2);
+    rDispEl.textContent      = (R500 >= 1e8) ? "∞" : String(Math.round(R500));
+    altDispEl.textContent    = (alt_m === 0) ? "sea level" : "2500 m";
+    labelsDispEl.textContent = labelsOn ? "on" : "off";
+
+    winInput.value = widthA.toFixed(2);
+
+    // Show blank input when "∞"
+    rInput.value = (R500 >= 1e8) ? "" : String(Math.round(R500));
+
+    // Always show current center wavelength in the box
+    jumpCInput.value = centerA().toFixed(3);
+
+    btnLabels.textContent = labelsOn ? "On" : "Off";
+
+    // Selected-state styling (black buttons)
+    const setSel = (id, on) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle("sel", !!on);
+    };
+
+    // Tellurics altitude
+    setSel("alt0", alt_m === 0);
+    setSel("alt2500", alt_m === 2500);
+
+    // Resolution quick buttons
+    setSel("r20k",  Math.abs(R500 - 20000) < 1);
+    setSel("r40k",  Math.abs(R500 - 40000) < 1);
+    setSel("r100k", Math.abs(R500 - 100000) < 1);
+    setSel("r200k", Math.abs(R500 - 200000) < 1);
+    setSel("rInf",  R500 >= 1e8);
+
+    // Zoom = window multiplier relative to DEFAULT_WIDTH (with tolerance)
+    const z1On = Math.abs(widthA - (DEFAULT_WIDTH * 1)) < 1e-6;
+    const z2On = Math.abs(widthA - (DEFAULT_WIDTH * 2)) < 1e-6;
+    const z4On = Math.abs(widthA - (DEFAULT_WIDTH * 4)) < 1e-6;
+    setSel("z1", z1On);
+    setSel("z2", z2On);
+    setSel("z4", z4On);
+  }
+
+  function render() {
+    start = clampStart(start);
+    const end = Math.min(start + widthA, WMAX);
+
+    const url =
+      `/segment.png?start=${encodeURIComponent(start)}` +
+      `&width=${encodeURIComponent(widthA)}` +
+      `&R500=${encodeURIComponent(R500)}` +
+      `&alt=${encodeURIComponent(alt_m)}` +
+      `&labels=${encodeURIComponent(labelsOn ? 1 : 0)}` +
+      `&ts=${Date.now()}`;
+
+    imgEl.src = url;
+
+    startEl.textContent = start.toFixed(3);
+urlEl.textContent   = url.replace(/&ts=\d+$/, "");
+
+    updateHud();
+  }
+
+  function pan(deltaA) {
+    start += deltaA;
+    render();
+  }
+
+  function setWindow(newWidth) {
+    newWidth = Math.max(0.1, Math.min(newWidth, (WMAX - WMIN)));
+    const c = centerA();
+    widthA = newWidth;
+    start = c - (widthA / 2);
+
+    // default pan step ~20% of window
+    panStepInput.value = (0.5 * widthA).toFixed(2);
+    render();
+  }
+
+  function setR(newR) {
+    if (!Number.isFinite(newR) || newR <= 0) return;
+    R500 = newR;
+    render();
+  }
+
+  function setAltM(newAltM) {
+    if (newAltM !== 0 && newAltM !== 2500) return;
+    alt_m = newAltM;
+    render();
+  }
+
+  // Init UI
+  panStepInput.value = (0.5 * widthA).toFixed(2);
+  winInput.value = widthA.toFixed(2);
+  updateHud();
+
+  // Pan buttons
+  document.getElementById("btnLeft").addEventListener("click", () => {
+    const step = parseFloat(panStepInput.value || DEFAULT_STEP);
+    pan(-step);
+  });
+  document.getElementById("btnRight").addEventListener("click", () => {
+    const step = parseFloat(panStepInput.value || DEFAULT_STEP);
+    pan(+step);
+  });
+// Jump: center
+  document.getElementById("btnJumpC").addEventListener("click", () => {
+    const v = parseFloat(jumpCInput.value);
+    if (!Number.isFinite(v)) return;
+    start = v - (widthA / 2);
+    render();
+  });
+
+  // Labels toggle
+  btnLabels.addEventListener("click", () => {
+    labelsOn = !labelsOn;
+    render();
+  });
+
+  // Zoom buttons
+  document.getElementById("z1").addEventListener("click", () => setWindow(DEFAULT_WIDTH * 1));
+  document.getElementById("z2").addEventListener("click", () => setWindow(DEFAULT_WIDTH * 2));
+  document.getElementById("z4").addEventListener("click", () => setWindow(DEFAULT_WIDTH * 4));
+
+  // Set window from input
+  document.getElementById("btnWin").addEventListener("click", () => {
+    const v = parseFloat(winInput.value);
+    if (!Number.isFinite(v)) return;
+    setWindow(v);
+  });
+
+  // Resolution buttons
+  document.getElementById("rInf").addEventListener("click", () => setR(R_INF));
+  document.getElementById("r20k").addEventListener("click", () => setR(20000));
+  document.getElementById("r40k").addEventListener("click", () => setR(40000));
+  document.getElementById("r100k").addEventListener("click", () => setR(100000));
+  document.getElementById("r200k").addEventListener("click", () => setR(200000));
+
+  // Set R from input (blank => ∞)
+  document.getElementById("btnR").addEventListener("click", () => {
+    const raw = (rInput.value || "").trim();
+    if (raw === "") { setR(R_INF); return; }
+    const v = parseFloat(raw);
+    if (!Number.isFinite(v) || v <= 0) return;
+    setR(v);
+  });
+
+  // Altitude buttons (meters)
+  document.getElementById("alt0").addEventListener("click", () => setAltM(0));
+  document.getElementById("alt2500").addEventListener("click", () => setAltM(2500));
+
+  
+  // Hover wavelength readout (no click+drag)
+  function updateMouseLambda(e) {
+    const rect = imgEl.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const frac = x / Math.max(1, rect.width);
+    const f = Math.max(0, Math.min(1, frac));
+    const lam = start + f * widthA;
+    mouseLamEl.textContent = lam.toFixed(3);
+  }
+
+  imgEl.addEventListener("mousemove", updateMouseLambda);
+  imgEl.addEventListener("mouseleave", () => { mouseLamEl.textContent = "—"; });
+
+
+// Keyboard arrows pan
+  window.addEventListener("keydown", (e) => {
+    const base = parseFloat(panStepInput.value || DEFAULT_STEP);
+    const fast = e.shiftKey ? 5.0 : 1.0;
+
+    if (e.key === "ArrowLeft")  { e.preventDefault(); pan(-base * fast); }
+    if (e.key === "ArrowRight") { e.preventDefault(); pan(+base * fast); }
+  });
+
+  // Initial render
+  render();
+</script>
+</body>
+</html>
