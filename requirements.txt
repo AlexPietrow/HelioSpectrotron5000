@@ -1,6 +1,7 @@
-numpy
-matplotlib
-pandas
-astropy
-fastapi
-uvicorn
+numpy==2.2.6
+scipy==1.14.1
+matplotlib==3.9.4
+pandas==2.2.3
+astropy==6.1.7
+fastapi==0.127.1
+uvicorn==0.40.0
