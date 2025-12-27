@@ -1,4 +1,4 @@
-pip
-setuptools
-wheel
-numpy
+pip>=24.0
+setuptools>=69.2.0
+wheel>=0.43.0
+numpy==2.2.6
