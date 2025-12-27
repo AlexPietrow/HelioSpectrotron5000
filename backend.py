@@ -330,7 +330,7 @@ except Exception as e:
 # ----------------------------
 # Rendering
 # ----------------------------
-def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels_on: bool) -> bytes:
+def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels_on: bool, legend_on: bool) -> bytes:
     """
     alt_m: 0 or 2500 (meters)
 
@@ -368,15 +368,21 @@ def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels
         y_highres = np.asarray(f_norm * t_seg, dtype=float)
         y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
 
-        # Plot tellurics (red behind) and final spectrum (black)
-        ax1.plot(w, t_seg,   color="red",   lw=1.0, zorder=3)
-        ax1.plot(w, y_final, color="black", lw=2.0, zorder=2)
+        # Plot tellurics (display-only, convolved to match R500) behind and final spectrum (black)
+        # NOTE: physics already applied in y_final via (solar*telluric) ⊗ LSF.
+        t_disp = np.asarray(apply_resolution_R500(w, t_seg, R500), dtype=float)
+
+        ax1.plot(w, t_disp,  color="red",   lw=1.0, zorder=3, label="tellurics")
+        ax1.plot(w, y_final, color="black", lw=2.0, zorder=2, label="spectrum")
 
         ax1.set_xlim(start, end)
         ax1.set_ylim(0, 1.20)
         ax1.set_ylabel("Normalized intensity")
         r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
         ax1.set_title(f"{start:.2f}–{end:.2f} Å   (R@500nm={r_txt}, alt={alt_m} m)")
+
+        if legend_on:
+            ax1.legend(loc="upper right", frameon=True)
 
         # ----------------------------
         # Line overlays (gated by labels_on)
@@ -493,6 +499,7 @@ def segment_png(
     R500: Optional[float] = None,
     alt: Optional[int] = 2500,   # 0 or 2500 (meters)
     labels: Optional[int] = 1,   # 0/1 toggle from HTML
+    legend: Optional[int] = 0,  # 0/1: show legend (intended for first load only)
 ):
     try:
         start = float(start)
@@ -511,7 +518,9 @@ def segment_png(
 
         labels_on = bool(int(labels)) if labels is not None else True
 
-        png = render_segment_png(start, end, R500=R500, alt_m=alt_m, labels_on=labels_on)
+        legend_on = bool(int(legend)) if legend is not None else False
+
+        png = render_segment_png(start, end, R500=R500, alt_m=alt_m, labels_on=labels_on, legend_on=legend_on)
         return Response(content=png, media_type="image/png")
 
     except Exception:
