@@ -48,6 +48,14 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
+import os, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ISPY_REPO = os.path.join(HERE, "ISPy")  # this contains the inner ISPy/ package
+if ISPY_REPO not in sys.path:
+    sys.path.insert(0, ISPY_REPO)
+
+
 from ISPy.spec import atlas as ispy_atlas
 
 
