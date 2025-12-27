@@ -1,6 +1,7 @@
 numpy
-setuptools
-wheel
+matplotlib
+pandas
+astropy
 
 fastapi
 uvicorn
