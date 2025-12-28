@@ -62,8 +62,8 @@ from ISPy.spec import atlas as ispy_atlas
 # ----------------------------
 # CONFIG
 # ----------------------------
-GLOBAL_WMIN_A = 3000.0
-GLOBAL_WMAX_A = 12000.0
+GLOBAL_WMIN_A = 3290.0
+GLOBAL_WMAX_A = 12500.0
 
 DEFAULT_WIDTH_A = 25.0
 OVERLAP = 0.10
@@ -86,8 +86,8 @@ TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
 # Line lists (HARD-CODED like your working atlas.py)
-OLD_LINE_CSV = os.path.join(HERE, "csv",  "all_pages_clean_filtered_clean.csv")
-NEW_LINE_CSV = os.path.join(HERE, "csv2", "all_pages_lines_wav_strength_id.csv")
+OLD_LINE_CSV = os.path.join(HERE, "",  "all_pages_clean_filtered_clean.csv")
+NEW_LINE_CSV = os.path.join(HERE, "", "all_pages_lines_wav_strength_id.csv")
 
 
 # ----------------------------
