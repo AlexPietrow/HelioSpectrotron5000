@@ -87,8 +87,8 @@
     <!-- Header -->
     <div class="row">
       <div>
-        <div class="title">HelioSpectrotron 5000</div>
-        <div class="subtitle">An interactive solar spectrum with tellurics and optional resolution degradation.</div>
+        <div class="title">Solar Spectral Atlas</div>
+        <div class="subtitle">ISPy FTS × TAPAS tellurics, with optional resolution degradation.</div>
       </div>
 
       <!-- Row 1 buttons -->
@@ -151,6 +151,30 @@
           <span class="label">Altitude</span>
           <button id="btnAlt0" title="Sea level (0 m)">Sea level</button>
           <button id="btnAlt2500" class="active" title="2500 m">2500 m</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Row 4: Interesting lines -->
+    <div class="row">
+      <div class="rowBlock">
+        <div class="group">
+          <span class="label">Jump to</span>
+          <button id="btnCaK"></button>
+          <button id="btnCaH"></button>
+          <button id="btnHbeta"></button>
+          <button id="btnMgB1"></button>
+          <button id="btnHeD3"></button>
+          <button id="btnNaD1"></button>
+          <button id="btnCaI6163"></button>
+          <button id="btnFe6173"></button>
+          <button id="btnFe6302"></button>
+          <button id="btnHalpha"></button>
+          <button id="btnKI7699"></button>
+          <button id="btnCaIIIR"></button>
+          <button id="btnHe10830"></button>
         </div>
       </div>
     </div>
@@ -246,6 +270,21 @@
   const btnAlt0 = el("btnAlt0");
   const btnAlt2500 = el("btnAlt2500");
 
+  // Jump-to-line buttons (sorted by wavelength)
+  const btnCaK     = el("btnCaK");
+  const btnCaH     = el("btnCaH");
+  const btnHbeta   = el("btnHbeta");
+  const btnMgB1    = el("btnMgB1");
+  const btnHeD3    = el("btnHeD3");
+  const btnNaD1    = el("btnNaD1");
+  const btnCaI6163 = el("btnCaI6163");
+  const btnFe6173  = el("btnFe6173");
+  const btnFe6302  = el("btnFe6302");
+  const btnHalpha  = el("btnHalpha");
+  const btnKI7699  = el("btnKI7699");
+  const btnCaIIIR  = el("btnCaIIIR");
+  const btnHe10830 = el("btnHe10830");
+
   const unitTextC = el("unitTextC");
   const unitTextW = el("unitTextW");
   const unitTextS = el("unitTextS");
@@ -261,6 +300,28 @@
   const btnCopyData   = el("btnCopyData");
   const dataText      = el("dataText");
   const dataMsg       = el("dataMsg");
+
+  // Line definitions in Å (used for jump + label/title formatting)
+const LINE_DEFS = [
+  { el: btnCaK,     name: "Ca II K",  lamA: 3933.660, showLam: false },
+  { el: btnCaH,     name: "Ca II H",  lamA: 3968.470, showLam: false },
+  { el: btnHbeta,   name: "Hβ",       lamA: 4861.330, showLam: false },
+  { el: btnMgB1,    name: "Mg b1",    lamA: 5183.604, showLam: false },
+  { el: btnHeD3,    name: "He D3",    lamA: 5875.620, showLam: false },
+  { el: btnNaD1,    name: "Na D1",    lamA: 5895.924, showLam: false },
+
+  // Only these show wavelength in the *button label*
+  { el: btnFe6173,  name: "Fe I",     lamA: 6173.334, showLam: true,  lamLabelA: 6173.0 },
+  { el: btnFe6302,  name: "Fe I",     lamA: 6302.493, showLam: true,  lamLabelA: 6302.0 },
+
+  { el: btnHalpha,  name: "Hα",       lamA: 6562.800, showLam: false },
+
+  { el: btnKI7699,  name: "K I",      lamA: 7698.964, showLam: true,  lamLabelA: 7699.0 },
+
+  { el: btnCaIIIR,  name: "Ca II IR", lamA: 8542.090, showLam: false },
+  { el: btnHe10830, name: "He I", lamA: 10830.340, showLam: true },
+];
+
 
   function factorToA() { return (unit === "nm") ? 10.0 : 1.0; }   // displayed -> Å
   function factorFromA(){ return (unit === "nm") ? 0.1 : 1.0; }   // Å -> displayed
@@ -303,6 +364,44 @@
     widthA = clamp(widthA, 0.1, (WMAX_A - startA));
   }
 
+  function formatLamForButton(lamA){
+    if (unit === "nm"){
+      const v = lamA / 10.0;
+      return `${v.toFixed(3)} nm`;
+    }
+    return `${lamA.toFixed(1)} Å`;
+  }
+
+function formatLamForTitle(lamA){
+  if (unit === "nm") return `${(lamA/10.0).toFixed(4)} nm`;
+  return `${lamA.toFixed(3)} Å`;
+}
+
+function formatLamForLabel(lamA){
+  // integer display, unit-aware
+  if (unit === "nm") return `${Math.round(lamA / 10.0)} nm`;
+  return `${Math.round(lamA)} Å`;
+}
+
+
+function updateLineButtons(){
+  for (const d of LINE_DEFS){
+    const lamTitle = formatLamForTitle(d.lamA);
+
+    // tooltip always shows wavelength (unit-aware)
+    d.el.title = `${d.name} ${lamTitle}`;
+
+    // label only shows wavelength if requested
+    if (d.showLam){
+      const lamLabelA = (typeof d.lamLabelA === "number") ? d.lamLabelA : d.lamA;
+      d.el.textContent = `${d.name} ${formatLamForLabel(lamLabelA)}`;
+    } else {
+      d.el.textContent = d.name;
+    }
+  }
+}
+
+
   function syncUIFromState(){
     const f = factorFromA();
 
@@ -313,9 +412,10 @@
     // R input: blank means ∞
     r500Input.value = (r500 >= 1e8) ? "" : String(Math.round(r500));
 
-    btnLabels.classList.toggle("active", labelsOn);
-    btnLegend.classList.toggle("active", legendOn);
-    btnUnit.textContent = (unit === "nm") ? "nm" : "Å";
+    btnUnit.textContent = (unit === "nm") ? "Å" : "nm";  // show target unit
+    btnUnit.classList.add("active");                     // always looks pressed
+    btnUnit.setAttribute("aria-pressed", "true");
+
 
     unitTextC.textContent = (unit === "nm") ? "nm" : "Å";
     unitTextW.textContent = (unit === "nm") ? "nm" : "Å";
@@ -324,6 +424,8 @@
     const startDisp = startA * f;
     const endDisp   = (startA + widthA) * f;
     rangePill.textContent = `range: ${startDisp.toFixed(3)}–${endDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
+
+    updateLineButtons();
   }
 
   function readUIToState(){
@@ -409,6 +511,14 @@
     img.src = url;
   }
 
+  // Jump helper
+  function gotoLine_A(lamA){
+    centerA = clamp(lamA, WMIN_A, WMAX_A);
+    recalcWindowFromCenter();
+    syncUIFromState();
+    render();
+  }
+
   // ---- hover wavelength readout ----
   function updateHover(ev){
     const rect = img.getBoundingClientRect();
@@ -433,6 +543,7 @@
     syncUIFromState();
     render();
   });
+
 
   // Download current PNG
   btnDownload.addEventListener("click", async () => {
@@ -558,6 +669,20 @@
   // Altitude buttons
   btnAlt0.addEventListener("click", () => { setAltitude(0); render(); });
   btnAlt2500.addEventListener("click", () => { setAltitude(2500); render(); });
+
+  // ---- row 4 jump buttons ----
+  btnCaK.addEventListener("click",     () => gotoLine_A(3933.660));
+  btnCaH.addEventListener("click",     () => gotoLine_A(3968.470));
+  btnHbeta.addEventListener("click",   () => gotoLine_A(4861.330));
+  btnMgB1.addEventListener("click",    () => gotoLine_A(5183.604));
+  btnHeD3.addEventListener("click",    () => gotoLine_A(5875.620));
+  btnNaD1.addEventListener("click",    () => gotoLine_A(5895.924));
+  btnFe6173.addEventListener("click",  () => gotoLine_A(6173.334));
+  btnFe6302.addEventListener("click",  () => gotoLine_A(6302.493));
+  btnHalpha.addEventListener("click",  () => gotoLine_A(6562.800));
+  btnKI7699.addEventListener("click",  () => gotoLine_A(7698.964));
+  btnCaIIIR.addEventListener("click",  () => gotoLine_A(8542.090));
+  btnHe10830.addEventListener("click", () => gotoLine_A(10830.340));
 
   // ---- init ----
   centerA = clamp(centerA, WMIN_A, WMAX_A);

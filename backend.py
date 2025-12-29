@@ -404,7 +404,7 @@ def render_segment_png(
 
     # Plot tellurics (red behind) and final spectrum (black)
     if legend_on:
-        ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics (convolved)")
+        ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics")
         ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum")
     else:
         ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3)
@@ -417,7 +417,15 @@ def render_segment_png(
     r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
     ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m)")
     if legend_on:
-        ax1.legend(loc="upper right", frameon=False)
+        leg = ax1.legend(
+            loc="upper right",
+            frameon=True,
+            facecolor="white",
+            edgecolor="black",
+            framealpha=1.0,
+            fontsize=10,
+        )
+
 
     # ----------------------------
     # Line overlays (gated by labels_on)
