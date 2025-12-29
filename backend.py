@@ -40,6 +40,16 @@ import matplotlib.pyplot as plt
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
+import sys, os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ISPY_SRC = os.path.join(HERE, "ISPy")  # the submodule root
+
+# If we have a checked-out ISPy tree, add it to sys.path so `import ISPy` works.
+if os.path.isdir(os.path.join(ISPY_SRC, "ISPy")):
+    sys.path.insert(0, ISPY_SRC)
+
+
 from ISPy.spec import atlas as ispy_atlas
 
 
