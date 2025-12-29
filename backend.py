@@ -46,8 +46,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 # ----------------------------
 # CONFIG
 # ----------------------------
-GLOBAL_WMIN_A = 3000.0
-GLOBAL_WMAX_A = 12000.0
+GLOBAL_WMIN_A = 3290.0
+GLOBAL_WMAX_A = 12500.0
 
 DEFAULT_WIDTH_A = 25.0
 OVERLAP = 0.10
@@ -77,8 +77,8 @@ TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
 # Line lists (FILES IN REPO ROOT)
-OLD_LINE_CSV = os.path.join(HERE, "moore_updated_with_reference.csv")
-NEW_LINE_CSV = os.path.join(HERE, "babcock_updated_with_reference.csv")
+OLD_LINE_CSV = os.path.join(HERE, "moore_binned_0p5A.csv")
+NEW_LINE_CSV = os.path.join(HERE, "babcock_binned_0p5A.csv")
 
 
 # ----------------------------
@@ -284,6 +284,22 @@ def _read_csv_auto(path: str):
         df = pd.read_csv(path, sep=";")
     return df
 
+def bin_lines(wav: np.ndarray, ids: np.ndarray, bin_A: float = 0.2):
+    """
+    Keep at most one line per wavelength bin.
+    Chooses the first occurrence in each bin.
+    """
+    if wav is None or ids is None or len(wav) == 0:
+        return wav, ids
+
+    bins = np.round(wav / bin_A).astype(int)
+
+    _, idx = np.unique(bins, return_index=True)
+    idx = np.sort(idx)
+
+    return wav[idx], ids[idx]
+
+
 def load_moore_lines(path: str):
     """Moore list CSV expected columns: (wavelength or wav), ew, id."""
     if not path or not os.path.exists(path):
@@ -303,7 +319,15 @@ def load_moore_lines(path: str):
     df["ew"]         = df["ew"].apply(clean_ew)
     df["id"]         = df["id"].fillna("").astype(str)
 
-    # (rest unchanged)
+    # basic filtering like you do for IA
+    df = df.dropna(subset=["wavelength"])
+    df = df[df["id"].str.strip() != ""]
+
+    if len(df) == 0:
+        return np.array([], dtype=float), np.array([], dtype=str)
+
+    return df["wavelength"].to_numpy(float), df["id"].to_numpy(str)
+
 
 
 def load_ia_lines(path: str):
@@ -331,6 +355,7 @@ def load_ia_lines(path: str):
 
 try:
     old_wav, old_ids = load_moore_lines(OLD_LINE_CSV)
+    old_wav, old_ids = bin_lines(old_wav, old_ids, bin_A=0.9)
     print(f"[INFO] Moore CSV={OLD_LINE_CSV}  n={0 if old_wav is None else len(old_wav)}", flush=True)
 except Exception as e:
     print(f"[WARN] Moore line CSV not loaded: {e}", flush=True)
