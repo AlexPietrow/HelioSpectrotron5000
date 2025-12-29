@@ -314,13 +314,19 @@ except Exception as e:
 # ----------------------------
 # Rendering
 # ----------------------------
-def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels_on: bool, legend_on: bool, unit: str) -> bytes:
+def render_segment_png(
+    start: float,
+    end: float,
+    R500: float,
+    alt_m: int,
+    labels_on: bool,
+    legend_on: bool,
+    unit: str,
+) -> bytes:
+
     w, f_norm = fetch_ispy_air_norm(start, end)
 
-    # Unit handling:
-    # - Data are in Å internally.
-    # - If unit == "nm", the frontend sends start/width in nm. We convert to Å in the endpoint,
-    #   but plot axes in nm here.
+    # Display unit handling (Å internal always)
     unit = (unit or "A").strip().lower()
     plot_in_nm = unit in ("nm", "nanometer", "nanometers")
 
@@ -343,94 +349,73 @@ def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels
 
     twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
 
-    # Interpolate tellurics onto atlas wavelength cut
+    # Interpolate tellurics
     t_seg = np.interp(w, twav, tint)
 
-    # ---- PHYSICALLY CORRECT ORDER ----
-    y_highres = np.asarray(f_norm * t_seg, dtype=float)
-    y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
+    # PHYSICALLY CORRECT ORDER
+    y_highres = f_norm * t_seg
+    y_final = apply_resolution_R500(w, y_highres, R500)
 
-        # Unit scaling for display (data remain in Å)
-        if plot_in_nm:
-            w_plot = w / 10.0
-            start_plot = start / 10.0
-            end_plot = end / 10.0
-            x_unit = "nm"
-        else:
-            w_plot = w
-            start_plot = start
-            end_plot = end
-            x_unit = "Å"
+    # ---- DISPLAY UNITS ----
+    if plot_in_nm:
+        w_plot = w / 10.0
+        start_plot = start / 10.0
+        end_plot = end / 10.0
+        x_unit = "nm"
+    else:
+        w_plot = w
+        start_plot = start
+        end_plot = end
+        x_unit = "Å"
 
-        # Plot tellurics (display-only, convolved to match R500) behind and final spectrum (black)
-        # NOTE: physics already applied in y_final via (solar*telluric) ⊗ LSF.
-        t_disp = np.asarray(apply_resolution_R500(w, t_seg, R500), dtype=float)
+    # Display-only tellurics (convolved for visual consistency)
+    t_disp = apply_resolution_R500(w, t_seg, R500)
 
-        ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Telluric")
-        ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Solar × Telluric (convolved)")
+    ax1.plot(w_plot, t_disp, color="red", lw=1.0, zorder=3, label="Telluric")
+    ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2,
+             label="Solar × Telluric (convolved)")
 
-        ax1.set_xlim(start_plot, end_plot)
-        ax1.set_ylim(0, 1.20)
-        ax1.set_ylabel("Normalized intensity")
-        r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
-        ax1.set_title(f"{start_plot:.2f}–{end_plot:.2f} {x_unit}   (R@500nm={r_txt}, alt={alt_m} m)")
+    ax1.set_xlim(start_plot, end_plot)
+    ax1.set_ylim(0, 1.2)
+    ax1.set_ylabel("Normalized intensity")
 
-        if legend_on:
-            ax1.legend(loc="upper right", frameon=True)
+    r_txt = "∞" if R500 >= 1e8 else f"{R500:g}"
+    ax1.set_title(
+        f"{start_plot:.2f}–{end_plot:.2f} {x_unit}   "
+        f"(R@500nm={r_txt}, alt={alt_m} m)"
+    )
 
+    if legend_on:
+        ax1.legend(loc="upper right", frameon=True)
 
-        # ----------------------------
-        # Line overlays (gated by labels_on)
-        # ----------------------------
-        if labels_on:
-            MAX_LABELS = 60
+    # ---- LINE LABELS ----
+    if labels_on:
+        MAX_LABELS = 60
 
-            if old_wav is not None:
-                mask = (old_wav >= start) & (old_wav <= end)
-                pw = old_wav[mask]
-                pi = old_ids[mask]
-                if pw.size > MAX_LABELS:
-                    pw = pw[:MAX_LABELS]
-                    pi = pi[:MAX_LABELS]
-                for x, lab in zip(pw, pi):
-                    x_plot = x / 10.0 if plot_in_nm else x
-                    ax1.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.5, zorder=0, color="k")
-                    ax1.text(
-                        x_plot, 0.84, lab,
-                        transform=ax1.get_xaxis_transform(),
-                        rotation=45,
-                        fontsize=8,
-                        ha="center",
-                        va="bottom",
-                        color="k",
-                    )
+        if old_wav is not None:
+            mask = (old_wav >= start) & (old_wav <= end)
+            for x, lab in zip(old_wav[mask][:MAX_LABELS], old_ids[mask][:MAX_LABELS]):
+                xp = x / 10.0 if plot_in_nm else x
+                ax1.axvline(xp, lw=0.4, alpha=0.5, color="k")
+                ax1.text(xp, 0.84, lab, rotation=45, fontsize=8,
+                         transform=ax1.get_xaxis_transform(),
+                         ha="center", va="bottom")
 
-            if new_wav is not None:
-                mask = (new_wav >= start) & (new_wav <= end)
-                pw = new_wav[mask]
-                pi = new_ids[mask]
-                if pw.size > MAX_LABELS:
-                    pw = pw[:MAX_LABELS]
-                    pi = pi[:MAX_LABELS]
-                for x, lab in zip(pw, pi):
-                    x_plot = x / 10.0 if plot_in_nm else x
-                    ax1.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.7, zorder=0, color="k")
-                    ax1.text(
-                        x_plot, 0.84, lab,
-                        transform=ax1.get_xaxis_transform(),
-                        rotation=45,
-                        fontsize=8,
-                        ha="center",
-                        va="bottom",
-                    )
+        if new_wav is not None:
+            mask = (new_wav >= start) & (new_wav <= end)
+            for x, lab in zip(new_wav[mask][:MAX_LABELS], new_ids[mask][:MAX_LABELS]):
+                xp = x / 10.0 if plot_in_nm else x
+                ax1.axvline(xp, lw=0.4, alpha=0.7, color="k")
+                ax1.text(xp, 0.84, lab, rotation=45, fontsize=8,
+                         transform=ax1.get_xaxis_transform(),
+                         ha="center", va="bottom")
 
-    # 2D strip: STRICTLY from y_final (after all processing)
+    # ---- 2D STRIP (STRICTLY y_final) ----
     img2d = np.tile(y_final[np.newaxis, :], (REPEAT_2D, 1))
     ax2.imshow(
         img2d,
         aspect="auto",
         origin="lower",
-        interpolation="nearest",
         cmap="gray",
         extent=[w_plot[0], w_plot[-1], 0, 1.0],
     )
@@ -443,6 +428,7 @@ def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels
     plt.close(fig)
     gc.collect()
     return buf.getvalue()
+
 
 
 # ----------------------------
