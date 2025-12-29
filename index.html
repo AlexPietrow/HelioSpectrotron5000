@@ -78,6 +78,49 @@
       color:var(--text);
     }
     .divider{height:10px;}
+  
+    /* --- acknowledgments button + modal --- */
+    #btnAck{
+      position:fixed;
+      bottom:12px;
+      right:12px;
+      z-index:9000;
+      font-size:13px;
+      padding:8px 12px;
+    }
+    #ackModal{
+      position:fixed;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background:rgba(0,0,0,0.35);
+      z-index:9998;
+      padding:18px;
+    }
+    #ackCard{
+      width:min(760px, 100%);
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:12px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.2);
+      overflow:hidden;
+    }
+    #ackHead{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:12px 14px;
+      border-bottom:1px solid var(--border);
+    }
+    #ackBody{
+      padding:12px 14px;
+      font-size:14px;
+      line-height:1.45;
+    }
+    #ackBody a{color:var(--accent);text-decoration:none;}
+    #ackBody a:hover{text-decoration:underline;}
+
   </style>
 </head>
 <body>
@@ -87,8 +130,8 @@
     <!-- Header -->
     <div class="row">
       <div>
-        <div class="title">Solar Spectral Atlas</div>
-        <div class="subtitle">ISPy FTS × TAPAS tellurics, with optional resolution degradation.</div>
+        <div class="title">HelioSpectrotron 5000</div>
+        <div class="subtitle">Solar atlas with telurics and optional resolution degradation.</div>
       </div>
 
       <!-- Row 1 buttons -->
@@ -191,6 +234,9 @@
   </div>
 </div>
 
+<!-- Acknowledgments -->
+<button id="btnAck" title="Acknowledgments">Acknowledgments</button>
+
 <!-- Modal -->
 <div id="modal" style="
   position:fixed; inset:0; display:none; align-items:center; justify-content:center;
@@ -213,6 +259,48 @@
     </div>
   </div>
 </div>
+
+
+<!-- Acknowledgments Modal -->
+<div id="ackModal">
+  <div id="ackCard">
+    <div id="ackHead">
+      <div style="font-weight:700;">Acknowledgments</div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button id="btnCloseAck" style="padding:8px 10px; border-radius:10px;">Close</button>
+      </div>
+    </div>
+    <div id="ackBody">
+      <p><strong>Code and design</strong><br>
+      A. G. M. Pietrow</p>
+
+      <p><strong>Solar atlas</strong><br>
+      Neckel &amp; Labs (1984)<br>
+      <a href="https://ui.adsabs.harvard.edu/abs/1984SoPh...90..205N/abstract" target="_blank" rel="noopener noreferrer">
+        https://ui.adsabs.harvard.edu/abs/1984SoPh...90..205N/abstract
+      </a></p>
+
+      <p><strong>Telluric transmission</strong><br>
+      Bertaux et al. (2014), TAPAS atmospheric transmission service<br>
+      <a href="https://ui.adsabs.harvard.edu/abs/2014A%26A...564A..46B/abstract" target="_blank" rel="noopener noreferrer">
+        https://ui.adsabs.harvard.edu/abs/2014A%26A...564A..46B/abstract
+      </a></p>
+
+      <p><strong>Line identifications</strong><br>
+      Moore et al. (1966)<br>
+      <a href="https://ui.adsabs.harvard.edu/abs/1966sst..book.....M" target="_blank" rel="noopener noreferrer">
+        https://ui.adsabs.harvard.edu/abs/1966sst..book.....M
+      </a><br>
+      Babcock &amp; Moore (1947)</p>
+
+      <p>
+        When using this atlas, please cite the reference work <em>[publication pending]</em>,
+        and the relevant citations from above.
+      </p>
+    </div>
+  </div>
+</div>
+
 
 <script>
 (() => {
@@ -300,6 +388,15 @@
   const btnCopyData   = el("btnCopyData");
   const dataText      = el("dataText");
   const dataMsg       = el("dataMsg");
+
+  // acknowledgments modal
+  const btnAck      = el("btnAck");
+  const ackModal    = el("ackModal");
+  const btnCloseAck = el("btnCloseAck");
+
+  function openAck(){ ackModal.style.display = "flex"; }
+  function closeAck(){ ackModal.style.display = "none"; }
+
 
   // Line definitions in Å (used for jump + label/title formatting)
 const LINE_DEFS = [
@@ -601,6 +698,12 @@ function updateLineButtons(){
 
   btnCloseModal.addEventListener("click", () => closeModal());
   modal.addEventListener("click", (ev) => { if (ev.target === modal) closeModal(); });
+
+  // Acknowledgments modal
+  btnAck.addEventListener("click", () => openAck());
+  btnCloseAck.addEventListener("click", () => closeAck());
+  ackModal.addEventListener("click", (ev) => { if (ev.target === ackModal) closeAck(); });
+
 
   btnCopyData.addEventListener("click", async () => {
     try {
