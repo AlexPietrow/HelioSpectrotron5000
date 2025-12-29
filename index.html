@@ -2,349 +2,336 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Solar Atlas Scroller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Solar Spectral Atlas</title>
   <style>
-    :root { --fg:#111; --muted:#666; --bg:#fff; --panel:#f6f6f6; --border:#ddd; --btn:#eee; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 0; background: var(--bg); color: var(--fg); }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 14px; }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
-    .row > * { flex: 0 0 auto; }
-    .spacer { flex: 1 1 auto; }
-    .small { font-size: 13px; color: var(--muted); }
-    .btn { background: var(--btn); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
-    .btn:hover { filter: brightness(0.97); }
-    .btn.active { background:#000; color:#fff; border-color:#000; }
-    .in { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; }
-    .in-sm { width: 80px; }
-    .pill { display:inline-block; padding: 2px 8px; border:1px solid var(--border); border-radius: 999px; background:#fff; }
-    #img { width: 100%; max-width: 1200px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-    .grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    code { background:#fff; border:1px solid var(--border); padding: 1px 6px; border-radius: 6px; }
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --text: #e7e9ee;
+      --muted: #a8adbb;
+      --border: #2a2f3a;
+      --btn: #232836;
+      --btnHover: #2b3142;
+      --btnActive: #000000;
+      --btnActiveText: #ffffff;
+      --accent: #5b8cff;
+    }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
+    .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .controls { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; align-items: end; }
+    .controls .field { grid-column: span 3; }
+    .controls .field.small { grid-column: span 2; }
+    .controls .field.wide { grid-column: span 4; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px 0; }
+    input, select { width: 100%; box-sizing: border-box; background: #0d0f14; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 10px; font-size: 14px; }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    .btnbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    button {
+      background: var(--btn); color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 10px 12px; font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { background: var(--btnHover); }
+    button.active { background: var(--btnActive); color: var(--btnActiveText); border-color: #000; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+    .imgwrap { margin-top: 14px; }
+    #img { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: #0d0f14; }
+    .status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+              font-size: 12px; color: var(--muted); margin-top: 8px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="panel">
-    <div class="row">
-      <div><strong>Atlas</strong> <span class="small">scroll + tellurics</span></div>
-      <div class="spacer"></div>
-      <div class="small">
-        Range: <span id="wmin"></span>–<span id="wmax"></span> <span id="unitDisp">Å</span> •
-        Window: <span id="widthDisp"></span> <span id="unitDisp2">Å</span> •
-        R@500nm: <span id="rDisp"></span> •
-        Tellurics: <span id="altDisp"></span> •
-        Labels: <span class="pill" id="labelsDisp"></span> •
-        Legend: <span class="pill" id="legendDisp"></span>
+  <div class="card">
+    <div class="row" style="justify-content: space-between;">
+      <div>
+        <div style="font-size:18px; font-weight: 650;">Solar Spectral Atlas</div>
+        <div style="font-size:12px; color: var(--muted); margin-top:4px;">
+          ISPy FTS × TAPAS tellurics (alt 0 m / 2500 m), with optional resolution degradation.
+        </div>
+      </div>
+      <div class="btnbar">
+        <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
+        <button id="btnLegend" title="Toggle legend">Legend</button>
+        <button id="btnUnit" title="Toggle plotting unit">Å</button>
+        <button id="btnDownload" title="Download current image">Download PNG</button>
       </div>
     </div>
 
-    <div class="row">
-      <span class="small">Labels:</span>
-      <button class="btn" id="btnLabels">On</button>
+    <div style="height:12px"></div>
 
-      <span class="small">Legend:</span>
-      <button class="btn" id="btnLegend">Off</button>
+    <div class="controls">
+      <div class="field wide">
+        <label for="startInput">Start wavelength (<span id="unitText1">Å</span>)</label>
+        <input id="startInput" type="number" step="0.001" />
+      </div>
 
-      <span class="small">Units:</span>
-      <button class="btn" id="btnUnits">Å</button>
+      <div class="field">
+        <label for="widthInput">Width (<span id="unitText2">Å</span>)</label>
+        <input id="widthInput" type="number" step="0.001" />
+      </div>
 
-      <button class="btn" id="btnDownload">Download image</button>
+      <div class="field">
+        <label for="stepInput">Step (<span id="unitText3">Å</span>)</label>
+        <input id="stepInput" type="number" step="0.001" />
+      </div>
 
-      <div class="spacer"></div>
+      <div class="field small">
+        <label for="altSelect">Altitude</label>
+        <select id="altSelect">
+          <option value="2500">2500 m</option>
+          <option value="0">0 m</option>
+        </select>
+      </div>
 
-      <span class="small">Tellurics:</span>
-      <button class="btn" id="btnAlt0">0 m</button>
-      <button class="btn" id="btnAlt1">2500 m</button>
+      <div class="field wide">
+        <label for="r500Input">Resolution R@500nm (∞ for none)</label>
+        <input id="r500Input" type="number" step="1" />
+      </div>
 
-      <span class="small">R@500nm:</span>
-      <input class="in in-sm" id="r500" type="number" step="100" />
-      <button class="btn" id="btnRInf">∞</button>
-    </div>
-
-    <div class="row">
-      <button class="btn" id="btnLeft">◀ Left</button>
-      <button class="btn" id="btnRight">Right ▶</button>
-      <span class="small" id="lblPan">Pan step (Å):</span>
-      <input class="in in-sm" id="panstep" type="number" step="0.1" />
-
-      <span class="small" id="lblJump">Jump to center (Å):</span>
-      <input class="in" id="jumpc" type="number" step="0.1" />
-      <button class="btn" id="btnJumpC">Go</button>
-
-      <span class="small" id="lblWin">Window (Å):</span>
-      <input class="in in-sm" id="win" type="number" step="0.1" />
-      <button class="btn" id="btnWin">Set</button>
-
-      <div class="spacer"></div>
-
-      <div class="small">
-        Start: <code id="start"></code> <span id="unitStart">Å</span> •
-        End: <code id="end"></code> <span id="unitEnd">Å</span>
+      <div class="field small">
+        <button id="btnPrev" style="width:100%;">◀</button>
+      </div>
+      <div class="field small">
+        <button id="btnNext" style="width:100%;">▶</button>
+      </div>
+      <div class="field small">
+        <button id="btnGo" style="width:100%;">Go</button>
       </div>
     </div>
-  </div>
 
-  <div class="grid" style="margin-top:12px;">
-    <img id="img" alt="segment" />
+    <div class="hint">
+      Range: <span id="rangeText"></span>. Resolution model: FWHM(Å)=5000/R@500nm, Gaussian LSF.
+      Data selection is always in Å; unit toggle affects plotting/labels only.
+    </div>
+
+    <div class="imgwrap">
+      <img id="img" alt="segment" />
+      <div id="status" class="status"></div>
+    </div>
   </div>
 </div>
 
 <script>
-  // Injected by backend
-  const WMIN = parseFloat("__WMIN__");
-  const WMAX = parseFloat("__WMAX__");
-  const DEFAULT_WIDTH = parseFloat("__WIDTH__");
-  const DEFAULT_STEP = parseFloat("__STEP__");
-  const DEFAULT_R = parseFloat("__R500__");
+(() => {
+  // Backend-provided defaults (Å)
+  const WMIN_A  = parseFloat("__WMIN__");
+  const WMAX_A  = parseFloat("__WMAX__");
+  const DEF_W_A = parseFloat("__WIDTH__");
+  const DEF_S_A = parseFloat("__STEP__");
+  const DEF_R   = parseFloat("__R500__");
 
-  const imgEl       = document.getElementById("img");
-  const wminEl      = document.getElementById("wmin");
-  const wmaxEl      = document.getElementById("wmax");
-  const startEl     = document.getElementById("start");
-  const endEl       = document.getElementById("end");
-  const unitStartEl = document.getElementById("unitStart");
-  const unitEndEl   = document.getElementById("unitEnd");
+  // Internal state is ALWAYS Å
+  let startA = WMIN_A;
+  let widthA = DEF_W_A;
+  let stepA  = DEF_S_A;
+  let r500   = DEF_R;
+  let alt    = 2500;
 
-  const widthDispEl  = document.getElementById("widthDisp");
-  const rDispEl      = document.getElementById("rDisp");
-  const altDispEl    = document.getElementById("altDisp");
-  const labelsDispEl = document.getElementById("labelsDisp");
-
-  const btnLegend    = document.getElementById("btnLegend");
-  const legendDispEl = document.getElementById("legendDisp");
-  const btnUnits     = document.getElementById("btnUnits");
-  const unitDispEl   = document.getElementById("unitDisp");
-  const unitDispEl2  = document.getElementById("unitDisp2");
-  const btnDownload  = document.getElementById("btnDownload");
-
-  const lblPanEl   = document.getElementById("lblPan");
-  const lblJumpEl  = document.getElementById("lblJump");
-  const lblWinEl   = document.getElementById("lblWin");
-
-  const btnLabels = document.getElementById("btnLabels");
-  const btnAlt0 = document.getElementById("btnAlt0");
-  const btnAlt1 = document.getElementById("btnAlt1");
-  const btnLeft = document.getElementById("btnLeft");
-  const btnRight = document.getElementById("btnRight");
-  const panStepInput = document.getElementById("panstep");
-  const jumpCInput = document.getElementById("jumpc");
-  const winInput = document.getElementById("win");
-  const rInput = document.getElementById("r500");
-  const btnRInf = document.getElementById("btnRInf");
-
-  // State
-  let widthA  = DEFAULT_WIDTH; // always Å internally
-  let start   = WMIN;          // always Å internally
-  let R500    = DEFAULT_R;
-  let alt_m   = 2500;
-
-  // Label toggle
+  // UI toggles
   let labelsOn = true;
+  let legendOn = false;          // user setting
+  let firstLoadLegend = true;    // show legend ONCE on first render
+  let unit = "A";                // "A" or "nm" (plotting only)
 
-  // Legend toggle (off by default; first load will still show once)
-  let legendOn = false;
+  const el = (id) => document.getElementById(id);
 
-  // Display units (internals remain Å)
-  let units = "A"; // "A" or "nm"
-  let firstLoad = true;
+  const startInput = el("startInput");
+  const widthInput = el("widthInput");
+  const stepInput  = el("stepInput");
+  const r500Input  = el("r500Input");
+  const altSelect  = el("altSelect");
 
-  function unitSymbol() { return units === "nm" ? "nm" : "Å"; }
-  function dispFactor() { return units === "nm" ? 0.1 : 1.0; }
+  const btnLabels   = el("btnLabels");
+  const btnLegend   = el("btnLegend");
+  const btnUnit     = el("btnUnit");
+  const btnDownload = el("btnDownload");
+  const btnPrev = el("btnPrev");
+  const btnNext = el("btnNext");
+  const btnGo   = el("btnGo");
 
-  // For compatibility (older version had these; keep harmless)
-  function toDisp(valA) { return valA * dispFactor(); }
-  function fromDisp(val) { return val / dispFactor(); }
+  const img = el("img");
+  const status = el("status");
 
-  function clamp(v) {
-    const min = WMIN;
-    const max = WMAX - widthA;
-    return Math.max(min, Math.min(max, v));
+  const unitText1 = el("unitText1");
+  const unitText2 = el("unitText2");
+  const unitText3 = el("unitText3");
+  const rangeText = el("rangeText");
+
+  function factorToA() {
+    // displayed -> Å
+    return (unit === "nm") ? 10.0 : 1.0;
   }
 
-  function centerA() {
-    return start + (widthA / 2);
+  function fmt(x) {
+    if (!isFinite(x)) return "";
+    return (Math.round(x*1000)/1000).toString();
   }
 
-  function toDisp(aA) {
-    return aA * dispFactor();
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
   }
 
-  function fromDisp(x) {
-    const v = Number(x);
-    if (!Number.isFinite(v)) return NaN;
-    return v / dispFactor();
-  }
+  function syncInputsFromState() {
+    const f = factorToA();
+    startInput.value = fmt(startA / f);
+    widthInput.value = fmt(widthA / f);
+    stepInput.value  = fmt(stepA / f);
+    r500Input.value  = (r500 >= 1e8) ? "" : String(Math.round(r500));
+    altSelect.value  = String(alt);
 
-  function updateUnitLabels() {
-    const u = unitSymbol();
-    unitDispEl.textContent = u;
-    unitDispEl2.textContent = u;
-    unitStartEl.textContent = u;
-    unitEndEl.textContent = u;
-
-    lblPanEl.textContent  = `Pan step (${u}):`;
-    lblJumpEl.textContent = `Jump to center (${u}):`;
-    lblWinEl.textContent  = `Window (${u}):`;
-
-    wminEl.textContent = toDisp(WMIN).toFixed(2);
-    wmaxEl.textContent = toDisp(WMAX).toFixed(2);
-
-    btnUnits.textContent = (units === "nm") ? "nm" : "Å";
-    btnUnits.classList.toggle("active", units === "nm");
-  }
-
-  function updateHud() {
-    // Top status line
-    widthDispEl.textContent  = toDisp(widthA).toFixed(2);
-    rDispEl.textContent      = (R500 >= 1e8) ? "∞" : String(Math.round(R500));
-    altDispEl.textContent    = (alt_m === 0) ? "sea level" : "2500 m";
-    labelsDispEl.textContent = labelsOn ? "on" : "off";
-    legendDispEl.textContent = legendOn ? "on" : "off";
-
-    btnLabels.textContent = labelsOn ? "On" : "Off";
     btnLabels.classList.toggle("active", labelsOn);
-    btnLegend.textContent = legendOn ? "On" : "Off";
     btnLegend.classList.toggle("active", legendOn);
+    btnUnit.textContent = (unit === "nm") ? "nm" : "Å";
 
-    updateUnitLabels();
+    unitText1.textContent = (unit === "nm") ? "nm" : "Å";
+    unitText2.textContent = (unit === "nm") ? "nm" : "Å";
+    unitText3.textContent = (unit === "nm") ? "nm" : "Å";
 
-    // Inputs shown in current units
-    winInput.value = toDisp(widthA).toFixed(2);
-    jumpCInput.value = toDisp(centerA()).toFixed(2);
+    rangeText.textContent = `${(WMIN_A/f).toFixed(1)}–${(WMAX_A/f).toFixed(1)} ${(unit === "nm") ? "nm" : "Å"}`;
+  }
 
-    // Show blank input when "∞"
-    rInput.value = (R500 >= 1e8) ? "" : String(Math.round(R500));
+  function readInputsToState() {
+    const f = factorToA();
+    const s = parseFloat(startInput.value);
+    const w = parseFloat(widthInput.value);
+    const st= parseFloat(stepInput.value);
+    const r = parseFloat(r500Input.value);
 
-    // Start/end in current units
-    startEl.textContent = toDisp(start).toFixed(3);
-    endEl.textContent   = toDisp(start + widthA).toFixed(3);
+    if (isFinite(s)) startA = s * f;
+    if (isFinite(w)) widthA = w * f;
+    if (isFinite(st)) stepA = st * f;
+
+    // allow empty => infinity
+    r500 = (isFinite(r) && r > 0) ? r : 1e12;
+
+    startA = clamp(startA, WMIN_A, WMAX_A);
+    widthA = clamp(widthA, 0.1, (WMAX_A - WMIN_A));
+    stepA  = clamp(stepA,  0.1, (WMAX_A - WMIN_A));
+    alt    = parseInt(altSelect.value || "2500", 10);
+    if (![0,2500].includes(alt)) alt = 2500;
+  }
+
+  function buildUrl() {
+    // legend: show on first render once, then only if user enabled
+    const legendParam = (firstLoadLegend || legendOn) ? 1 : 0;
+
+    const u = new URL(window.location.origin + "/segment.png");
+    u.searchParams.set("start",  startA.toFixed(6));
+    u.searchParams.set("width",  widthA.toFixed(6));
+    u.searchParams.set("R500",   r500.toFixed(6));
+    u.searchParams.set("alt",    String(alt));
+    u.searchParams.set("labels", labelsOn ? "1" : "0");
+    u.searchParams.set("legend", legendParam ? "1" : "0");
+    u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+    // cache buster
+    u.searchParams.set("_", String(Date.now()));
+    return u.toString();
   }
 
   function render() {
-    updateHud();
+    readInputsToState();
+    syncInputsFromState();
 
-    const legendParam = (legendOn || firstLoad) ? 1 : 0;
+    const endA = Math.min(startA + widthA, WMAX_A);
+    const f = factorToA();
+    status.textContent =
+      `start=${(startA/f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}, ` +
+      `end=${(endA/f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}, ` +
+      `width=${(widthA/f).toFixed(3)}, step=${(stepA/f).toFixed(3)}\n` +
+      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}, alt=${alt} m, ` +
+      `labels=${labelsOn?1:0}, legend=${(firstLoadLegend||legendOn)?1:0}`;
 
-    // Cache-bust with timestamp
-    const ts = Date.now();
-    const url = `/segment.png?start=${start}&width=${widthA}&R500=${R500}&alt=${alt_m}` +
-                `&labels=${labelsOn ? 1 : 0}&legend=${legendParam}&units=${units}` +
-                `&ts=${ts}`;
-    imgEl.src = url;
+    const url = buildUrl();
 
-    firstLoad = false;
+    img.onload = () => {
+      // after first successful render, turn legend off unless user explicitly enabled it
+      if (firstLoadLegend) {
+        firstLoadLegend = false;
+        legendOn = false;
+        btnLegend.classList.remove("active");
+      }
+    };
+    img.onerror = async () => {
+      status.textContent += "\n[error] failed to load image (check /meta and server logs)";
+    };
+    img.src = url;
   }
 
-  function setAlt(v) {
-    alt_m = v;
-    btnAlt0.classList.toggle("active", alt_m === 0);
-    btnAlt1.classList.toggle("active", alt_m === 2500);
-    render();
-  }
-
-  function setWindow(newWidthA) {
-    widthA = Math.max(0.1, Math.min(newWidthA, WMAX - WMIN));
-    start = clamp(start);
-    render();
-  }
-
-  // Init UI
-  updateUnitLabels();
-  panStepInput.value = toDisp(0.2 * widthA).toFixed(2);
-  winInput.value = toDisp(widthA).toFixed(2);
-  jumpCInput.value = toDisp(centerA()).toFixed(2);
-  updateHud();
-
-  // Buttons
-  btnLeft.addEventListener("click", () => {
-    const step = fromDisp(panStepInput.value || toDisp(DEFAULT_STEP));
-    start = clamp(start - step);
-    render();
-  });
-
-  btnRight.addEventListener("click", () => {
-    const step = fromDisp(panStepInput.value || toDisp(DEFAULT_STEP));
-    start = clamp(start + step);
-    render();
-  });
-
-  document.getElementById("btnJumpC").addEventListener("click", () => {
-    const vA = fromDisp(jumpCInput.value);
-    if (!Number.isFinite(vA)) return;
-    start = clamp(vA - (widthA / 2));
-    render();
-  });
-
-  document.getElementById("btnWin").addEventListener("click", () => {
-    const vA = fromDisp(winInput.value);
-    if (!Number.isFinite(vA)) return;
-    setWindow(vA);
-  });
-
-  btnAlt0.addEventListener("click", () => setAlt(0));
-  btnAlt1.addEventListener("click", () => setAlt(2500));
-
-  btnRInf.addEventListener("click", () => { R500 = 1e12; render(); });
-
-  rInput.addEventListener("change", () => {
-    const v = Number(rInput.value);
-    if (!Number.isFinite(v) || v <= 0) return;
-    R500 = v;
-    render();
-  });
-
+  // -------- Buttons --------
   btnLabels.addEventListener("click", () => {
     labelsOn = !labelsOn;
-    btnLabels.textContent = labelsOn ? "On" : "Off";
-    btnLabels.classList.toggle("active", labelsOn);
     render();
   });
 
   btnLegend.addEventListener("click", () => {
     legendOn = !legendOn;
-    btnLegend.textContent = legendOn ? "On" : "Off";
-    btnLegend.classList.toggle("active", legendOn);
     render();
   });
 
-  btnUnits.addEventListener("click", () => {
-    units = (units === "nm") ? "A" : "nm";
-    updateUnitLabels();
-    updateHud();
+  btnUnit.addEventListener("click", () => {
+    unit = (unit === "nm") ? "A" : "nm";
     render();
   });
 
+  btnPrev.addEventListener("click", () => {
+    readInputsToState();
+    startA = clamp(startA - stepA, WMIN_A, WMAX_A);
+    render();
+  });
+
+  btnNext.addEventListener("click", () => {
+    readInputsToState();
+    startA = clamp(startA + stepA, WMIN_A, WMAX_A);
+    render();
+  });
+
+  btnGo.addEventListener("click", () => render());
+
+  // Download the CURRENT image
   btnDownload.addEventListener("click", async () => {
     try {
-      const src = imgEl.src;
-      if (!src) return;
-
-      const res = await fetch(src, { cache: "no-store" });
-      const blob = await res.blob();
-
-      const c = toDisp(centerA()).toFixed(2);
-      const w = toDisp(widthA).toFixed(2);
-      const u = unitSymbol();
-      const name = `atlas_${c}${u}_w${w}${u}_alt${alt_m}_R${(R500 >= 1e8 ? "inf" : Math.round(R500))}.png`;
-
-      const url = URL.createObjectURL(blob);
+      const url = img.src;
+      const resp = await fetch(url, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
       const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
+      const f = factorToA();
+      const endA = Math.min(startA + widthA, WMAX_A);
+      const startDisp = (startA / f).toFixed(3);
+      const endDisp   = (endA   / f).toFixed(3);
+      const unitLbl   = (unit === "nm") ? "nm" : "A";
+      a.download = `atlas_${startDisp}-${endDisp}_${unitLbl}.png`;
+      a.href = URL.createObjectURL(blob);
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     } catch (e) {
-      console.error("Download failed", e);
+      status.textContent += `\n[download error] ${e}`;
     }
   });
 
-  // Initial render (legend will be shown once)
-  setAlt(2500);
+  // Enter key triggers render
+  [startInput, widthInput, stepInput, r500Input].forEach((x) => {
+    x.addEventListener("keydown", (ev) => { if (ev.key === "Enter") render(); });
+  });
+  altSelect.addEventListener("change", () => render());
+
+  // Init
+  startA = WMIN_A;
+  widthA = DEF_W_A;
+  stepA  = DEF_S_A;
+  r500   = DEF_R;
+  alt    = 2500;
+
+  syncInputsFromState();
   render();
+})();
 </script>
 </body>
 </html>

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Spectrum scroller backend (FastAPI)
+"""Spectrum scroller backend (FastAPI)
 
 SkyCalc removed.
 Loads precomputed TAPAS tellurics from:
@@ -17,10 +16,11 @@ Invariants:
       y_final = (solar * telluric) ⊗ LSF
 - 2D strip is ALWAYS tiled from y_final (post-processing).
 
-Extras:
-- labels toggle (labels=0/1) controls line-name overlay
-- legend toggle (legend=0/1) controls legend display
-- unit toggle (unit="A" or "nm") controls DISPLAY ONLY (axis/title/ticks); data remain Å internally.
+Controls (via query params):
+- labels=0/1  : line-name overlay
+- legend=0/1  : matplotlib legend (off by default; frontend can show once on first load)
+- unit=A/nm   : plotting unit only (data selection remains in Å)
+- R500        : resolving power at 500 nm; uses FWHM_A = 5000 / R500
 
 Run:
   uvicorn backend:app --reload --port 8000
@@ -30,6 +30,7 @@ import io
 import os
 import gc
 import traceback
+import sys
 from typing import Optional, Tuple, Dict
 
 import numpy as np
@@ -39,19 +40,6 @@ import matplotlib.pyplot as plt
 
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
-
-import sys, os
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-ISPY_SRC = os.path.join(HERE, "ISPy")  # the submodule root
-
-# If we have a checked-out ISPy tree, add it to sys.path so `import ISPy` works.
-if os.path.isdir(os.path.join(ISPY_SRC, "ISPy")):
-    sys.path.insert(0, ISPY_SRC)
-
-
-from ISPy.spec import atlas as ispy_atlas
-
 
 # ----------------------------
 # CONFIG
@@ -63,7 +51,7 @@ DEFAULT_WIDTH_A = 25.0
 OVERLAP = 0.10
 DEFAULT_STEP_A = DEFAULT_WIDTH_A * (1.0 - OVERLAP)
 
-# Default "no smoothing" (treated as "∞")
+# Default "no smoothing" (treated as "∞" by apply_resolution_R500)
 DEFAULT_R500 = 1e12
 
 DPI = 160
@@ -72,6 +60,13 @@ REPEAT_2D = 120
 # Resolve paths relative to this file
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Ensure bundled ISPy submodule is importable (repo has ISPy/ISPy/...)
+ISPY_BUNDLE = os.path.join(HERE, "ISPy")
+if os.path.isdir(ISPY_BUNDLE) and ISPY_BUNDLE not in sys.path:
+    sys.path.insert(0, ISPY_BUNDLE)
+
+from ISPy.spec import atlas as ispy_atlas
+
 # Telluric files (TAPAS precomputed)
 TELL_FILE_ALT0 = os.environ.get("TELL_FILE_ALT0", os.path.join(HERE, "telat_alt0.npy"))  # 0 m
 TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1.npy"))  # 2500 m
@@ -79,10 +74,9 @@ TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1
 # Frontend
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
-# Line lists (hard-coded like your working atlas.py)
-OLD_LINE_CSV = os.path.join(HERE, "csv",  "all_pages_clean_filtered_clean.csv")
-NEW_LINE_CSV = os.path.join(HERE, "csv2", "all_pages_lines_wav_strength_id.csv")
-
+# Line lists (FILES IN REPO ROOT)
+OLD_LINE_CSV = os.path.join(HERE, "all_pages_clean_filtered_clean.csv")
+NEW_LINE_CSV = os.path.join(HERE, "all_pages_lines_wav_strength_id.csv")
 
 # ----------------------------
 # ISPy atlas (lazy to avoid reload thrash)
@@ -111,7 +105,6 @@ def fetch_ispy_air_norm(w0: float, w1: float):
     sel = (wav >= w0) & (wav <= w1)
     return wav[sel], I_norm[sel]
 
-
 # ----------------------------
 # Gaussian convolution (no SciPy)
 # ----------------------------
@@ -134,10 +127,7 @@ def convolve_reflect(y: np.ndarray, k: np.ndarray) -> np.ndarray:
     return np.convolve(ypad, k, mode="valid")
 
 def apply_resolution_R500(w: np.ndarray, y: np.ndarray, R500: float) -> np.ndarray:
-    """
-    Degrade y(w) by Gaussian with FWHM defined from resolving power at 500 nm:
-      FWHM_A = 5000 / R500  (Å)
-    """
+    """Degrade y(w) by Gaussian with FWHM defined from resolving power at 500 nm."""
     R500 = float(R500)
     if not np.isfinite(R500) or R500 <= 0:
         return y
@@ -158,7 +148,6 @@ def apply_resolution_R500(w: np.ndarray, y: np.ndarray, R500: float) -> np.ndarr
 
     k = gaussian_kernel_1d(sigma_samples)
     return convolve_reflect(y, k)
-
 
 # ----------------------------
 # Tellurics (TAPAS lookup)
@@ -197,7 +186,6 @@ WMAX = min(GLOBAL_WMAX_A, min(_wmaxs))
 
 if not (np.isfinite(WMIN) and np.isfinite(WMAX) and WMIN < WMAX):
     raise RuntimeError(f"Invalid telluric wavelength intersection: WMIN={WMIN}, WMAX={WMAX}")
-
 
 # ----------------------------
 # Line overlays (Moore + IA/strength) — robust loaders
@@ -247,12 +235,7 @@ def _read_csv_auto(path: str):
     return df
 
 def load_moore_lines(path: str):
-    """
-    Moore list CSV expected columns: wavelength, ew, id
-    Filters: ew >= 0, ew > 5, remove 'atm'
-    Binning: 1 Å integer bin, keep strongest EW per bin
-    """
-    import pandas as pd
+    """Moore list CSV expected columns: wavelength, ew, id."""
     if not path or not os.path.exists(path):
         print(f"[LINES] Moore missing: {path}", flush=True)
         return None, None
@@ -280,11 +263,7 @@ def load_moore_lines(path: str):
     return df["wavelength"].to_numpy(float), df["id"].to_numpy(str)
 
 def load_ia_lines(path: str):
-    """
-    IA/strength CSV expected columns: wav, strength, id
-    Filters: strength >= -5, remove 'atm'
-    """
-    import pandas as pd
+    """IA/strength CSV expected columns: wav, strength, id."""
     if not path or not os.path.exists(path):
         print(f"[LINES] IA missing: {path}", flush=True)
         return None, None
@@ -320,25 +299,15 @@ except Exception as e:
     print(f"[WARN] IA line CSV not loaded: {e}", flush=True)
     new_wav = new_ids = None
 
-
 # ----------------------------
 # Rendering
 # ----------------------------
-def render_segment_png(
-    start: float,
-    end: float,
-    R500: float,
-    alt_m: int,
-    labels_on: bool,
-    legend_on: bool,
-    unit: str,
-) -> bytes:
-
-    w, f_norm = fetch_ispy_air_norm(start, end)
-
-    # Display unit handling (Å internal always)
+def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels_on: bool, legend_on: bool, unit: str) -> bytes:
+    """Render [start,end] slice (selection in Å). unit affects plotting only."""
     unit = (unit or "A").strip().lower()
     plot_in_nm = unit in ("nm", "nanometer", "nanometers")
+
+    w, f_norm = fetch_ispy_air_norm(start, end)
 
     fig, (ax1, ax2) = plt.subplots(
         nrows=2,
@@ -359,78 +328,92 @@ def render_segment_png(
 
     twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
 
-    # Interpolate tellurics
+    # Interpolate tellurics onto atlas wavelength cut
     t_seg = np.interp(w, twav, tint)
 
-    # PHYSICALLY CORRECT ORDER
-    y_highres = f_norm * t_seg
-    y_final = apply_resolution_R500(w, y_highres, R500)
+    # ---- PHYSICALLY CORRECT ORDER ----
+    y_highres = np.asarray(f_norm * t_seg, dtype=float)
+    y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
 
-    # ---- DISPLAY UNITS ----
-    if plot_in_nm:
-        w_plot = w / 10.0
-        start_plot = start / 10.0
-        end_plot = end / 10.0
-        x_unit = "nm"
+    # Convert plotting units (data selection remains in Å)
+    w_plot     = (w / 10.0) if plot_in_nm else w
+    start_plot = (start / 10.0) if plot_in_nm else start
+    end_plot   = (end / 10.0) if plot_in_nm else end
+    unit_label = "nm" if plot_in_nm else "Å"
+
+    # Plot tellurics (red behind) and final spectrum (black)
+    if legend_on:
+        ax1.plot(w_plot, t_seg,   color="red",   lw=1.0, zorder=3, label="Tellurics")
+        ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum")
     else:
-        w_plot = w
-        start_plot = start
-        end_plot = end
-        x_unit = "Å"
-
-    # Display-only tellurics (convolved for visual consistency)
-    t_disp = apply_resolution_R500(w, t_seg, R500)
-
-    ax1.plot(w_plot, t_disp, color="red", lw=1.0, zorder=3, label="Telluric")
-    ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2,
-             label="Solar × Telluric (convolved)")
+        ax1.plot(w_plot, t_seg,   color="red",   lw=1.0, zorder=3)
+        ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2)
 
     ax1.set_xlim(start_plot, end_plot)
-    ax1.set_ylim(0, 1.2)
+    ax1.set_ylim(0, 1.20)
     ax1.set_ylabel("Normalized intensity")
-
-    r_txt = "∞" if R500 >= 1e8 else f"{R500:g}"
-    ax1.set_title(
-        f"{start_plot:.2f}–{end_plot:.2f} {x_unit}   "
-        f"(R@500nm={r_txt}, alt={alt_m} m)"
-    )
-
+    r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
+    ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m)")
     if legend_on:
-        ax1.legend(loc="upper right", frameon=True)
+        ax1.legend(loc="upper right", frameon=False)
 
-    # ---- LINE LABELS ----
+    # ----------------------------
+    # Line overlays (gated by labels_on)
+    # ----------------------------
     if labels_on:
         MAX_LABELS = 60
 
         if old_wav is not None:
             mask = (old_wav >= start) & (old_wav <= end)
-            for x, lab in zip(old_wav[mask][:MAX_LABELS], old_ids[mask][:MAX_LABELS]):
-                xp = x / 10.0 if plot_in_nm else x
-                ax1.axvline(xp, lw=0.4, alpha=0.5, color="k")
-                ax1.text(xp, 0.84, lab, rotation=45, fontsize=8,
-                         transform=ax1.get_xaxis_transform(),
-                         ha="center", va="bottom")
+            pw = old_wav[mask]
+            pi = old_ids[mask]
+            if pw.size > MAX_LABELS:
+                pw = pw[:MAX_LABELS]
+                pi = pi[:MAX_LABELS]
+            for x, lab in zip(pw, pi):
+                x_plot = (x / 10.0) if plot_in_nm else x
+                ax1.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.5, zorder=0, color="k")
+                ax1.text(
+                    x_plot, 0.84, lab,
+                    transform=ax1.get_xaxis_transform(),
+                    rotation=45,
+                    fontsize=8,
+                    ha="center",
+                    va="bottom",
+                    color="k",
+                )
 
         if new_wav is not None:
             mask = (new_wav >= start) & (new_wav <= end)
-            for x, lab in zip(new_wav[mask][:MAX_LABELS], new_ids[mask][:MAX_LABELS]):
-                xp = x / 10.0 if plot_in_nm else x
-                ax1.axvline(xp, lw=0.4, alpha=0.7, color="k")
-                ax1.text(xp, 0.84, lab, rotation=45, fontsize=8,
-                         transform=ax1.get_xaxis_transform(),
-                         ha="center", va="bottom")
+            pw = new_wav[mask]
+            pi = new_ids[mask]
+            if pw.size > MAX_LABELS:
+                pw = pw[:MAX_LABELS]
+                pi = pi[:MAX_LABELS]
+            for x, lab in zip(pw, pi):
+                x_plot = (x / 10.0) if plot_in_nm else x
+                ax1.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.7, zorder=0, color="k")
+                ax1.text(
+                    x_plot, 0.84, lab,
+                    transform=ax1.get_xaxis_transform(),
+                    rotation=45,
+                    fontsize=8,
+                    ha="center",
+                    va="bottom",
+                )
 
-    # ---- 2D STRIP (STRICTLY y_final) ----
+    # 2D strip: STRICTLY from y_final (after all processing)
     img2d = np.tile(y_final[np.newaxis, :], (REPEAT_2D, 1))
     ax2.imshow(
         img2d,
         aspect="auto",
         origin="lower",
+        interpolation="nearest",
         cmap="gray",
         extent=[w_plot[0], w_plot[-1], 0, 1.0],
     )
     ax2.set_xlim(start_plot, end_plot)
-    ax2.set_xlabel(f"Wavelength [{x_unit}]")
+    ax2.set_xlabel(f"Wavelength [{unit_label}]")
     ax2.set_yticks([])
 
     buf = io.BytesIO()
@@ -438,8 +421,6 @@ def render_segment_png(
     plt.close(fig)
     gc.collect()
     return buf.getvalue()
-
-
 
 # ----------------------------
 # FastAPI app
@@ -488,21 +469,14 @@ def segment_png(
     width: Optional[float] = None,
     R500: Optional[float] = None,
     alt: Optional[int] = 2500,   # 0 or 2500 (meters)
-    labels: Optional[int] = 1,   # 0/1 toggle from HTML
-    legend: Optional[int] = 0,   # 0/1 toggle from HTML
-    unit: Optional[str] = "A",   # "A" or "nm"
+    labels: Optional[int] = 1,   # 0/1
+    legend: Optional[int] = 0,   # 0/1
+    unit: Optional[str] = "A",   # 'A' or 'nm' (plotting only)
 ):
     try:
         start = float(start)
         width = float(width) if width is not None else DEFAULT_WIDTH_A
         R500 = DEFAULT_R500 if (R500 is None) else float(R500)
-
-        # Unit handling: frontend may send nm; convert to Å internally.
-        unit_norm = (unit or "A").strip().lower()
-        if unit_norm in ("nm", "nanometer", "nanometers"):
-            start = start * 10.0
-            if width is not None:
-                width = width * 10.0
 
         # clamp
         width = max(0.1, min(width, WMAX - WMIN))
