@@ -77,8 +77,8 @@ TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
 # Line lists (FILES IN REPO ROOT)
-OLD_LINE_CSV = os.path.join(HERE, "all_pages_clean_filtered_clean.csv")
-NEW_LINE_CSV = os.path.join(HERE, "all_pages_lines_wav_strength_id.csv")
+OLD_LINE_CSV = os.path.join(HERE, "babcock_updated_with_reference.csv")
+NEW_LINE_CSV = os.path.join(HERE, "moore_updated_with_reference.csv")
 
 # ----------------------------
 # ISPy atlas (lazy)
