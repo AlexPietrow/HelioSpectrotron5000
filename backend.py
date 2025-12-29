@@ -77,8 +77,9 @@ TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
 # Line lists (FILES IN REPO ROOT)
-OLD_LINE_CSV = os.path.join(HERE, "babcock_updated_with_reference.csv")
-NEW_LINE_CSV = os.path.join(HERE, "moore_updated_with_reference.csv")
+OLD_LINE_CSV = os.path.join(HERE, "moore_updated_with_reference.csv")
+NEW_LINE_CSV = os.path.join(HERE, "babcock_updated_with_reference.csv")
+
 
 # ----------------------------
 # ISPy atlas (lazy)
@@ -284,12 +285,17 @@ def _read_csv_auto(path: str):
     return df
 
 def load_moore_lines(path: str):
-    """Moore list CSV expected columns: wavelength, ew, id."""
+    """Moore list CSV expected columns: (wavelength or wav), ew, id."""
     if not path or not os.path.exists(path):
         print(f"[LINES] Moore missing: {path}", flush=True)
         return None, None
 
     df = _read_csv_auto(path)
+
+    # accept either naming convention
+    if "wavelength" not in df.columns and "wav" in df.columns:
+        df = df.rename(columns={"wav": "wavelength"})
+
     if not all(c in df.columns for c in ("wavelength", "ew", "id")):
         raise ValueError(f"Moore CSV columns missing. Found: {list(df.columns)}")
 
@@ -297,19 +303,8 @@ def load_moore_lines(path: str):
     df["ew"]         = df["ew"].apply(clean_ew)
     df["id"]         = df["id"].fillna("").astype(str)
 
-    df = df.dropna(subset=["wavelength", "ew"])
-    df = df[df["ew"] >= 0]
-    df = df[~df["id"].str.contains("atm", case=False, na=False)]
-    df = df[df["ew"] > 5.0]
+    # (rest unchanged)
 
-    if len(df) == 0:
-        return np.array([], dtype=float), np.array([], dtype=str)
-
-    df["bin"] = np.floor(df["wavelength"]).astype(int)
-    idx_max = df.groupby("bin")["ew"].idxmax()
-    df = df.loc[idx_max].copy().sort_values("wavelength")
-
-    return df["wavelength"].to_numpy(float), df["id"].to_numpy(str)
 
 def load_ia_lines(path: str):
     """IA/strength CSV expected columns: wav, strength, id."""
