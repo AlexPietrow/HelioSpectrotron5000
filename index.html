@@ -2,291 +2,348 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Spectrum Viewer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Solar Atlas Scroller</title>
   <style>
-    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #fafafa; }
-    header { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #ddd; z-index: 10; }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 12px 16px; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .row + .row { margin-top: 10px; }
-    .btn {
-      border: 1px solid #bbb;
-      border-radius: 8px;
-      padding: 8px 10px;
-      background: #fff;
-      cursor: pointer;
-      font-size: 14px;
-      user-select: none;
-    }
-    .btn:hover { background: #f2f2f2; }
-    .btn.sel { background: #111; color: #fff; border-color: #111; }
-    .btn:disabled { opacity: .45; cursor: not-allowed; }
-    .pill { padding: 6px 10px; border: 1px solid #ddd; border-radius: 999px; background: #fff; font-size: 13px; }
-    .spacer { flex: 1; }
-    .note { font-size: 13px; color: #555; }
-    #imgWrap { max-width: 1200px; margin: 14px auto; padding: 0 16px; position: relative; }
-    #plotImg { width: 100%; display: block; border: 1px solid #ddd; border-radius: 10px; background: #fff; }
-    #spinner {
-      position: absolute; inset: 0;
-      display: none;
-      align-items: center; justify-content: center;
-      background: rgba(250,250,250,0.7);
-      border-radius: 10px;
-      font-weight: 600;
-      color: #333;
-    }
-    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; border: 1px solid #ccc; border-bottom-width: 2px; padding: 2px 6px; border-radius: 6px; background: #fff; }
-    .status { font-size: 13px; color: #444; display: flex; gap: 14px; flex-wrap: wrap; }
-    .status code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    :root { --fg:#111; --muted:#666; --bg:#fff; --panel:#f6f6f6; --border:#ddd; --btn:#eee; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 0; background: var(--bg); color: var(--fg); }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 14px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
+    .row > * { flex: 0 0 auto; }
+    .spacer { flex: 1 1 auto; }
+    .small { font-size: 13px; color: var(--muted); }
+    .btn { background: var(--btn); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+    .btn:hover { filter: brightness(0.97); }
+    .btn.active { background:#000; color:#fff; border-color:#000; }
+    .in { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; }
+    .in-sm { width: 80px; }
+    .pill { display:inline-block; padding: 2px 8px; border:1px solid var(--border); border-radius: 999px; background:#fff; }
+    #img { width: 100%; max-width: 1200px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    code { background:#fff; border:1px solid var(--border); padding: 1px 6px; border-radius: 6px; }
   </style>
 </head>
-
 <body>
-<header>
-  <div class="wrap">
+<div class="wrap">
+  <div class="panel">
     <div class="row">
-      <div class="pill"><b>Zoom</b></div>
-      <button id="z1" class="btn sel">×1</button>
-      <button id="z2" class="btn">×2</button>
-      <button id="z4" class="btn">×4</button>
-      <button id="z8" class="btn">×8</button>
-
-      <div class="pill"><b>R@500nm</b></div>
-      <button id="rInf" class="btn">∞</button>
-      <button id="r80" class="btn">80k</button>
-      <button id="r200" class="btn sel">200k</button>
-      <button id="r500" class="btn">500k</button>
-
-      <div class="pill"><b>Alt</b></div>
-      <button id="a0" class="btn">Sea</button>
-      <button id="a2500" class="btn sel">2500m</button>
-
+      <div><strong>Atlas</strong> <span class="small">scroll + tellurics</span></div>
       <div class="spacer"></div>
-
-      <button id="btnLabels" class="btn">Labels</button>
-      <button id="btnLegend" class="btn">Legend</button>
-      <button id="btnUnit" class="btn">Å</button>
-      <button id="btnDownload" class="btn">Download</button>
-
-      <div class="pill">
-        <span class="note">Pan: <span class="kbd">←</span>/<span class="kbd">→</span> (step = ½ view)</span>
+      <div class="small">
+        Range: <span id="wmin"></span>–<span id="wmax"></span> <span id="unitDisp">Å</span> •
+        Window: <span id="widthDisp"></span> <span id="unitDisp2">Å</span> •
+        R@500nm: <span id="rDisp"></span> •
+        Tellurics: <span id="altDisp"></span> •
+        Labels: <span class="pill" id="labelsDisp"></span> •
+        Legend: <span class="pill" id="legendDisp"></span>
       </div>
     </div>
 
-    <div class="row status">
-      <div>Start: <code id="start"></code> <span id="dispUnit">Å</span></div>
-      <div>Zoom width: <code id="width"></code> Å</div>
-      <div>λ(mouse): <code id="mouseLam">—</code> <span id="mouseUnit">Å</span></div>
+    <div class="row">
+      <span class="small">Labels:</span>
+      <button class="btn" id="btnLabels">On</button>
+
+      <span class="small">Legend:</span>
+      <button class="btn" id="btnLegend">Off</button>
+
+      <span class="small">Units:</span>
+      <button class="btn" id="btnUnits">Å</button>
+
+      <button class="btn" id="btnDownload">Download image</button>
+
+      <div class="spacer"></div>
+
+      <span class="small">Tellurics:</span>
+      <button class="btn" id="btnAlt0">0 m</button>
+      <button class="btn" id="btnAlt1">2500 m</button>
+
+      <span class="small">R@500nm:</span>
+      <input class="in in-sm" id="r500" type="number" step="100" />
+      <button class="btn" id="btnRInf">∞</button>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="btnLeft">◀ Left</button>
+      <button class="btn" id="btnRight">Right ▶</button>
+      <span class="small" id="lblPan">Pan step (Å):</span>
+      <input class="in in-sm" id="panstep" type="number" step="0.1" />
+
+      <span class="small" id="lblJump">Jump to center (Å):</span>
+      <input class="in" id="jumpc" type="number" step="0.1" />
+      <button class="btn" id="btnJumpC">Go</button>
+
+      <span class="small" id="lblWin">Window (Å):</span>
+      <input class="in in-sm" id="win" type="number" step="0.1" />
+      <button class="btn" id="btnWin">Set</button>
+
+      <div class="spacer"></div>
+
+      <div class="small">
+        Start: <code id="start"></code> <span id="unitStart">Å</span> •
+        End: <code id="end"></code> <span id="unitEnd">Å</span>
+      </div>
     </div>
   </div>
-</header>
 
-<div id="imgWrap">
-  <img id="plotImg" alt="spectrum segment" />
-  <div id="spinner">Rendering…</div>
+  <div class="grid" style="margin-top:12px;">
+    <img id="img" alt="segment" />
+  </div>
 </div>
 
 <script>
-  const imgEl = document.getElementById("plotImg");
-  const spinner = document.getElementById("spinner");
+  // Injected by backend
+  const WMIN = parseFloat("__WMIN__");
+  const WMAX = parseFloat("__WMAX__");
+  const DEFAULT_WIDTH = parseFloat("__WIDTH__");
+  const DEFAULT_STEP = parseFloat("__STEP__");
+  const DEFAULT_R = parseFloat("__R500__");
 
-  const startEl = document.getElementById("start");
-  const widthEl = document.getElementById("width");
-  const mouseLamEl  = document.getElementById("mouseLam");
-  const mouseUnitEl = document.getElementById("mouseUnit");
-  const dispUnitEl  = document.getElementById("dispUnit");
+  const imgEl       = document.getElementById("img");
+  const wminEl      = document.getElementById("wmin");
+  const wmaxEl      = document.getElementById("wmax");
+  const startEl     = document.getElementById("start");
+  const endEl       = document.getElementById("end");
+  const unitStartEl = document.getElementById("unitStart");
+  const unitEndEl   = document.getElementById("unitEnd");
 
-  // Zoom buttons
-  const z1 = document.getElementById("z1");
-  const z2 = document.getElementById("z2");
-  const z4 = document.getElementById("z4");
-  const z8 = document.getElementById("z8");
+  const widthDispEl  = document.getElementById("widthDisp");
+  const rDispEl      = document.getElementById("rDisp");
+  const altDispEl    = document.getElementById("altDisp");
+  const labelsDispEl = document.getElementById("labelsDisp");
 
-  // R buttons
-  const rInf = document.getElementById("rInf");
-  const r80  = document.getElementById("r80");
-  const r200 = document.getElementById("r200");
-  const r500 = document.getElementById("r500");
+  const btnLegend    = document.getElementById("btnLegend");
+  const legendDispEl = document.getElementById("legendDisp");
+  const btnUnits     = document.getElementById("btnUnits");
+  const unitDispEl   = document.getElementById("unitDisp");
+  const unitDispEl2  = document.getElementById("unitDisp2");
+  const btnDownload  = document.getElementById("btnDownload");
 
-  // Alt buttons
-  const a0    = document.getElementById("a0");
-  const a2500 = document.getElementById("a2500");
+  const lblPanEl   = document.getElementById("lblPan");
+  const lblJumpEl  = document.getElementById("lblJump");
+  const lblWinEl   = document.getElementById("lblWin");
 
-  // Toggles
-  const btnLabels   = document.getElementById("btnLabels");
-  const btnLegend   = document.getElementById("btnLegend");
-  const btnUnit     = document.getElementById("btnUnit");
-  const btnDownload = document.getElementById("btnDownload");
+  const btnLabels = document.getElementById("btnLabels");
+  const btnAlt0 = document.getElementById("btnAlt0");
+  const btnAlt1 = document.getElementById("btnAlt1");
+  const btnLeft = document.getElementById("btnLeft");
+  const btnRight = document.getElementById("btnRight");
+  const panStepInput = document.getElementById("panstep");
+  const jumpCInput = document.getElementById("jumpc");
+  const winInput = document.getElementById("win");
+  const rInput = document.getElementById("r500");
+  const btnRInf = document.getElementById("btnRInf");
 
-  // State (internal wavelength always Å)
-  let start = 6300.0;        // Å
-  let zoom = 1;              // 1,2,4,8
-  let widthA = 20.0;         // Å at zoom=1
-  let R500 = 200000;
-  let alt_m = 2500;
+  // State
+  let widthA  = DEFAULT_WIDTH; // always Å internally
+  let start   = WMIN;          // always Å internally
+  let R500    = DEFAULT_R;
+  let alt_m   = 2500;
 
+  // Label toggle
   let labelsOn = true;
+
+  // Legend toggle (off by default; first load will still show once)
   let legendOn = false;
-  let unitNm = false;
-  let _firstLegendAutoHide = true;
 
-  function syncToggles() {
-    btnLabels.classList.toggle("sel", labelsOn);
-    btnLegend.classList.toggle("sel", legendOn);
-    btnUnit.classList.toggle("sel", unitNm);
-    btnUnit.textContent = unitNm ? "nm" : "Å";
-    mouseUnitEl.textContent = unitNm ? "nm" : "Å";
-    dispUnitEl.textContent  = unitNm ? "nm" : "Å";
+  // Display units (internals remain Å)
+  let units = "A"; // "A" or "nm"
+  let firstLoad = true;
+
+  function unitSymbol() { return units === "nm" ? "nm" : "Å"; }
+  function dispFactor() { return units === "nm" ? 0.1 : 1.0; }
+
+  // For compatibility (older version had these; keep harmless)
+  function toDisp(valA) { return valA * dispFactor(); }
+  function fromDisp(val) { return val / dispFactor(); }
+
+  function clamp(v) {
+    const min = WMIN;
+    const max = WMAX - widthA;
+    return Math.max(min, Math.min(max, v));
   }
 
-  function fmtNum(x) {
-    if (!isFinite(x)) return "∞";
-    if (Math.abs(x) >= 1e5) return x.toFixed(0);
-    if (Math.abs(x) >= 1e2) return x.toFixed(1);
-    return x.toFixed(3);
+  function centerA() {
+    return start + (widthA / 2);
   }
 
-  function setZoom(z) {
-    zoom = z;
-    z1.classList.toggle("sel", z===1);
-    z2.classList.toggle("sel", z===2);
-    z4.classList.toggle("sel", z===4);
-    z8.classList.toggle("sel", z===8);
+  function toDisp(aA) {
+    return aA * dispFactor();
+  }
+
+  function fromDisp(x) {
+    const v = Number(x);
+    if (!Number.isFinite(v)) return NaN;
+    return v / dispFactor();
+  }
+
+  function updateUnitLabels() {
+    const u = unitSymbol();
+    unitDispEl.textContent = u;
+    unitDispEl2.textContent = u;
+    unitStartEl.textContent = u;
+    unitEndEl.textContent = u;
+
+    lblPanEl.textContent  = `Pan step (${u}):`;
+    lblJumpEl.textContent = `Jump to center (${u}):`;
+    lblWinEl.textContent  = `Window (${u}):`;
+
+    wminEl.textContent = toDisp(WMIN).toFixed(2);
+    wmaxEl.textContent = toDisp(WMAX).toFixed(2);
+
+    btnUnits.textContent = (units === "nm") ? "nm" : "Å";
+    btnUnits.classList.toggle("active", units === "nm");
+  }
+
+  function updateHud() {
+    // Top status line
+    widthDispEl.textContent  = toDisp(widthA).toFixed(2);
+    rDispEl.textContent      = (R500 >= 1e8) ? "∞" : String(Math.round(R500));
+    altDispEl.textContent    = (alt_m === 0) ? "sea level" : "2500 m";
+    labelsDispEl.textContent = labelsOn ? "on" : "off";
+    legendDispEl.textContent = legendOn ? "on" : "off";
+
+    btnLabels.textContent = labelsOn ? "On" : "Off";
+    btnLabels.classList.toggle("active", labelsOn);
+    btnLegend.textContent = legendOn ? "On" : "Off";
+    btnLegend.classList.toggle("active", legendOn);
+
+    updateUnitLabels();
+
+    // Inputs shown in current units
+    winInput.value = toDisp(widthA).toFixed(2);
+    jumpCInput.value = toDisp(centerA()).toFixed(2);
+
+    // Show blank input when "∞"
+    rInput.value = (R500 >= 1e8) ? "" : String(Math.round(R500));
+
+    // Start/end in current units
+    startEl.textContent = toDisp(start).toFixed(3);
+    endEl.textContent   = toDisp(start + widthA).toFixed(3);
+  }
+
+  function render() {
+    updateHud();
+
+    const legendParam = (legendOn || firstLoad) ? 1 : 0;
+
+    // Cache-bust with timestamp
+    const ts = Date.now();
+    const url = `/segment.png?start=${start}&width=${widthA}&R500=${R500}&alt=${alt_m}` +
+                `&labels=${labelsOn ? 1 : 0}&legend=${legendParam}&units=${units}` +
+                `&ts=${ts}`;
+    imgEl.src = url;
+
+    firstLoad = false;
+  }
+
+  function setAlt(v) {
+    alt_m = v;
+    btnAlt0.classList.toggle("active", alt_m === 0);
+    btnAlt1.classList.toggle("active", alt_m === 2500);
     render();
   }
 
-  function setR(val) {
-    R500 = val;
-    rInf.classList.toggle("sel", !isFinite(val));
-    r80.classList.toggle("sel", val===80000);
-    r200.classList.toggle("sel", val===200000);
-    r500.classList.toggle("sel", val===500000);
+  function setWindow(newWidthA) {
+    widthA = Math.max(0.1, Math.min(newWidthA, WMAX - WMIN));
+    start = clamp(start);
     render();
   }
 
-  function setAlt(m) {
-    alt_m = m;
-    a0.classList.toggle("sel", m===0);
-    a2500.classList.toggle("sel", m===2500);
-    render();
-  }
+  // Init UI
+  updateUnitLabels();
+  panStepInput.value = toDisp(0.2 * widthA).toFixed(2);
+  winInput.value = toDisp(widthA).toFixed(2);
+  jumpCInput.value = toDisp(centerA()).toFixed(2);
+  updateHud();
 
-  // Labels / Legend / Unit toggles
+  // Buttons
+  btnLeft.addEventListener("click", () => {
+    const step = fromDisp(panStepInput.value || toDisp(DEFAULT_STEP));
+    start = clamp(start - step);
+    render();
+  });
+
+  btnRight.addEventListener("click", () => {
+    const step = fromDisp(panStepInput.value || toDisp(DEFAULT_STEP));
+    start = clamp(start + step);
+    render();
+  });
+
+  document.getElementById("btnJumpC").addEventListener("click", () => {
+    const vA = fromDisp(jumpCInput.value);
+    if (!Number.isFinite(vA)) return;
+    start = clamp(vA - (widthA / 2));
+    render();
+  });
+
+  document.getElementById("btnWin").addEventListener("click", () => {
+    const vA = fromDisp(winInput.value);
+    if (!Number.isFinite(vA)) return;
+    setWindow(vA);
+  });
+
+  btnAlt0.addEventListener("click", () => setAlt(0));
+  btnAlt1.addEventListener("click", () => setAlt(2500));
+
+  btnRInf.addEventListener("click", () => { R500 = 1e12; render(); });
+
+  rInput.addEventListener("change", () => {
+    const v = Number(rInput.value);
+    if (!Number.isFinite(v) || v <= 0) return;
+    R500 = v;
+    render();
+  });
+
   btnLabels.addEventListener("click", () => {
     labelsOn = !labelsOn;
-    syncToggles();
+    btnLabels.textContent = labelsOn ? "On" : "Off";
+    btnLabels.classList.toggle("active", labelsOn);
     render();
   });
 
   btnLegend.addEventListener("click", () => {
     legendOn = !legendOn;
-    _firstLegendAutoHide = false; // user explicitly chose
-    syncToggles();
+    btnLegend.textContent = legendOn ? "On" : "Off";
+    btnLegend.classList.toggle("active", legendOn);
     render();
   });
 
-  btnUnit.addEventListener("click", () => {
-    unitNm = !unitNm;
-    syncToggles();
+  btnUnits.addEventListener("click", () => {
+    units = (units === "nm") ? "A" : "nm";
+    updateUnitLabels();
+    updateHud();
     render();
   });
 
-  btnDownload.addEventListener("click", () => {
-    if (!imgEl.src) return;
-    const unit = unitNm ? "nm" : "A";
-    const s = unitNm ? (start / 10.0) : start;
-    const e = unitNm ? ((start + widthA) / 10.0) : (start + widthA);
-    const a = document.createElement("a");
-    a.href = imgEl.src;
-    a.download = `atlas_${s.toFixed(2)}-${e.toFixed(2)}_${unit}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  btnDownload.addEventListener("click", async () => {
+    try {
+      const src = imgEl.src;
+      if (!src) return;
+
+      const res = await fetch(src, { cache: "no-store" });
+      const blob = await res.blob();
+
+      const c = toDisp(centerA()).toFixed(2);
+      const w = toDisp(widthA).toFixed(2);
+      const u = unitSymbol();
+      const name = `atlas_${c}${u}_w${w}${u}_alt${alt_m}_R${(R500 >= 1e8 ? "inf" : Math.round(R500))}.png`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Download failed", e);
+    }
   });
 
-  // Zoom buttons
-  z1.addEventListener("click", () => setZoom(1));
-  z2.addEventListener("click", () => setZoom(2));
-  z4.addEventListener("click", () => setZoom(4));
-  z8.addEventListener("click", () => setZoom(8));
-
-  // R buttons
-  rInf.addEventListener("click", () => setR(Infinity));
-  r80.addEventListener("click", () => setR(80000));
-  r200.addEventListener("click", () => setR(200000));
-  r500.addEventListener("click", () => setR(500000));
-
-  // Alt buttons
-  a0.addEventListener("click", () => setAlt(0));
-  a2500.addEventListener("click", () => setAlt(2500));
-
-  function updateMouseLambda(ev) {
-    // map mouse x to wavelength using element rect
-    const rect = imgEl.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    const f = Math.min(1, Math.max(0, x / rect.width));
-    const lamA = start + f * widthA;
-    const lam = unitNm ? (lamA / 10.0) : lamA;
-    mouseLamEl.textContent = lam.toFixed(3);
-  }
-  imgEl.addEventListener("mousemove", updateMouseLambda);
-  imgEl.addEventListener("mouseleave", () => { mouseLamEl.textContent = "—"; });
-
-  function render() {
-    spinner.style.display = "flex";
-
-    widthA = 20.0 / zoom;
-    const end = start + widthA;
-
-    syncToggles();
-
-    // Display (units)
-    startEl.textContent = (unitNm ? (start/10.0) : start).toFixed(3);
-    widthEl.textContent = widthA.toFixed(3);
-
-    const unit = unitNm ? "nm" : "A";
-    const s = unitNm ? (start / 10.0) : start;
-    const w = unitNm ? (widthA / 10.0) : widthA;
-    const legendParam = (legendOn || _firstLegendAutoHide) ? 1 : 0;
-
-    const url =
-      `/segment.png?start=${encodeURIComponent(s)}` +
-      `&width=${encodeURIComponent(w)}` +
-      `&R500=${encodeURIComponent(R500)}` +
-      `&alt=${encodeURIComponent(alt_m)}` +
-      `&labels=${encodeURIComponent(labelsOn ? 1 : 0)}` +
-      `&legend=${encodeURIComponent(legendParam)}` +
-      `&unit=${encodeURIComponent(unit)}` +
-      `&ts=${Date.now()}`;
-
-    imgEl.onload = () => {
-      spinner.style.display = "none";
-      // Auto-hide the initial legend after the first successful paint.
-      if (_firstLegendAutoHide) {
-        _firstLegendAutoHide = false;
-        syncToggles();
-        render(); // one extra render without legend
-      }
-    };
-    imgEl.onerror = () => {
-      spinner.style.display = "none";
-      console.error("Failed to load segment image");
-    };
-
-    imgEl.src = url;
-  }
-
-  // Keyboard pan
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
-    const step = (20.0 / zoom) * 0.5; // 1/2 view
-    if (ev.key === "ArrowLeft") start -= step;
-    if (ev.key === "ArrowRight") start += step;
-    render();
-  });
-
-  // Initial render: legend appears once, then auto-hides
+  // Initial render (legend will be shown once)
+  setAlt(2500);
   render();
 </script>
 </body>
