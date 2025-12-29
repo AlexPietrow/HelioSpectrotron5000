@@ -5,113 +5,187 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Solar Spectral Atlas</title>
   <style>
-    :root {
-      --bg: #0f1115;
-      --panel: #171a21;
-      --text: #e7e9ee;
-      --muted: #a8adbb;
-      --border: #2a2f3a;
-      --btn: #232836;
-      --btnHover: #2b3142;
-      --btnActive: #000000;
-      --btnActiveText: #ffffff;
-      --accent: #5b8cff;
+    :root{
+      --bg:#ffffff;
+      --panel:#f6f7f9;
+      --text:#111827;
+      --muted:#4b5563;
+      --border:#d1d5db;
+      --btn:#ffffff;
+      --btnHover:#f3f4f6;
+      --btnActive:#111827;
+      --btnActiveText:#ffffff;
+      --accent:#2563eb;
     }
-    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
-    .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-    .controls { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; align-items: end; }
-    .controls .field { grid-column: span 3; }
-    .controls .field.small { grid-column: span 2; }
-    .controls .field.wide { grid-column: span 4; }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px 0; }
-    input, select { width: 100%; box-sizing: border-box; background: #0d0f14; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 10px; font-size: 14px; }
-    input:focus, select:focus { outline: none; border-color: var(--accent); }
-    .btnbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    button {
-      background: var(--btn); color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 12px; padding: 10px 12px; font-size: 14px;
-      cursor: pointer;
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+    .wrap{max-width:1180px;margin:0 auto;padding:18px;}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
+    .rowBlock{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    .title{font-size:18px;font-weight:700;}
+    .subtitle{font-size:12px;color:var(--muted);margin-top:4px;}
+    .btnbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    button{
+      background:var(--btn);color:var(--text);
+      border:1px solid var(--border);
+      border-radius:12px;padding:10px 12px;font-size:14px;
+      cursor:pointer;
     }
-    button:hover { background: var(--btnHover); }
-    button.active { background: var(--btnActive); color: var(--btnActiveText); border-color: #000; }
-    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
-    .imgwrap { margin-top: 14px; }
-    #img { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: #0d0f14; }
-    .status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-              font-size: 12px; color: var(--muted); margin-top: 8px; white-space: pre-wrap; }
+    button:hover{background:var(--btnHover);}
+    button.active{background:var(--btnActive);color:var(--btnActiveText);border-color:var(--btnActive);}
+    .group{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .label{font-size:12px;color:var(--muted);margin-right:4px;}
+    input{
+      background:#ffffff;color:var(--text);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:10px 10px;
+      font-size:14px;
+      width:140px;
+      box-sizing:border-box;
+    }
+    input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.15);}
+    .smallInput{width:120px;}
+    .tinyInput{width:100px;}
+    .imgwrap{margin-top:14px;}
+    #img{
+      width:100%;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:#ffffff;
+      display:block;
+    }
+    .status{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size:12px;color:var(--muted);margin-top:8px;white-space:pre-wrap;
+    }
+    .hoverline{
+      margin-top:6px;
+      font-size:12px;
+      color:var(--muted);
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .pill{
+      border:1px solid var(--border);
+      background:#fff;
+      padding:6px 10px;
+      border-radius:999px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size:12px;
+      color:var(--text);
+    }
+    .divider{height:10px;}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <div class="row" style="justify-content: space-between;">
+
+    <!-- Header -->
+    <div class="row">
       <div>
-        <div style="font-size:18px; font-weight: 650;">Solar Spectral Atlas</div>
-        <div style="font-size:12px; color: var(--muted); margin-top:4px;">
-          ISPy FTS × TAPAS tellurics (alt 0 m / 2500 m), with optional resolution degradation.
-        </div>
+        <div class="title">HelioSpectrotron 5000</div>
+        <div class="subtitle">An interactive solar spectrum with tellurics and optional resolution degradation.</div>
       </div>
+
+      <!-- Row 1 buttons -->
       <div class="btnbar">
         <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
         <button id="btnLegend" title="Toggle legend">Legend</button>
         <button id="btnUnit" title="Toggle plotting unit">Å</button>
-        <button id="btnDownload" title="Download current image">Download PNG</button>
+        <button id="btnDownload" title="Download current PNG">Download PNG</button>
+        <button id="btnData" title="Show/copy wavelength + convolved spectrum" aria-label="Copy data">📋</button>
       </div>
     </div>
 
-    <div style="height:12px"></div>
+    <div class="divider"></div>
 
-    <div class="controls">
-      <div class="field wide">
-        <label for="startInput">Start wavelength (<span id="unitText1">Å</span>)</label>
-        <input id="startInput" type="number" step="0.001" />
-      </div>
+    <!-- Row 2 -->
+    <div class="row">
+      <div class="rowBlock">
+        <div class="group">
+          <span class="label">Central wavelength (<span id="unitTextC">Å</span>)</span>
+          <input id="centerInput" class="smallInput" type="number" step="0.001" />
+          <button id="btnCenterGo" title="Center window and plot">Go</button>
+        </div>
 
-      <div class="field">
-        <label for="widthInput">Width (<span id="unitText2">Å</span>)</label>
-        <input id="widthInput" type="number" step="0.001" />
-      </div>
+        <div class="group">
+          <span class="label">Window</span>
+          <button id="btnWin1" class="active" title="×1 window">×1</button>
+          <button id="btnWin2" title="×2 window">×2</button>
+          <button id="btnWin5" title="×5 window">×5</button>
+          <input id="windowInput" class="tinyInput" type="number" step="0.001" />
+          <span class="label">(<span id="unitTextW">Å</span>)</span>
+        </div>
 
-      <div class="field">
-        <label for="stepInput">Step (<span id="unitText3">Å</span>)</label>
-        <input id="stepInput" type="number" step="0.001" />
-      </div>
-
-      <div class="field small">
-        <label for="altSelect">Altitude</label>
-        <select id="altSelect">
-          <option value="2500">2500 m</option>
-          <option value="0">0 m</option>
-        </select>
-      </div>
-
-      <div class="field wide">
-        <label for="r500Input">Resolution R@500nm (∞ for none)</label>
-        <input id="r500Input" type="number" step="1" />
-      </div>
-
-      <div class="field small">
-        <button id="btnPrev" style="width:100%;">◀</button>
-      </div>
-      <div class="field small">
-        <button id="btnNext" style="width:100%;">▶</button>
-      </div>
-      <div class="field small">
-        <button id="btnGo" style="width:100%;">Go</button>
+        <div class="group">
+          <span class="label">Step size</span>
+          <button id="btnStepLeft" title="Move left by step">&lt;</button>
+          <button id="btnStepRight" title="Move right by step">&gt;</button>
+          <input id="stepInput" class="tinyInput" type="number" step="0.001" />
+          <span class="label">(<span id="unitTextS">Å</span>)</span>
+        </div>
       </div>
     </div>
 
-    <div class="hint">
-      Range: <span id="rangeText"></span>. Resolution model: FWHM(Å)=5000/R@500nm, Gaussian LSF.
-      Data selection is always in Å; unit toggle affects plotting/labels only.
+    <div class="divider"></div>
+
+    <!-- Row 3 -->
+    <div class="row">
+      <div class="rowBlock">
+        <div class="group">
+          <span class="label">Resolution</span>
+          <button id="btnR20"  title="R=20,000">20k</button>
+          <button id="btnR40"  title="R=40,000">40k</button>
+          <button id="btnR100" title="R=100,000">100k</button>
+          <button id="btnR200" title="R=200,000">200k</button>
+          <button id="btnRinf" class="active" title="No degradation (∞)">∞</button>
+          <input id="r500Input" class="smallInput" type="number" step="1" />
+          <span class="label">(R@500nm; blank = ∞)</span>
+        </div>
+
+        <div class="group">
+          <span class="label">Altitude</span>
+          <button id="btnAlt0" title="Sea level (0 m)">Sea level</button>
+          <button id="btnAlt2500" class="active" title="2500 m">2500 m</button>
+        </div>
+      </div>
     </div>
 
     <div class="imgwrap">
       <img id="img" alt="segment" />
+      <div class="hoverline">
+        <div class="pill" id="hoverPill">hover: —</div>
+        <div class="pill" id="rangePill">range: —</div>
+      </div>
       <div id="status" class="status"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal" style="
+  position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.35); z-index:9999; padding:18px;">
+  <div style="
+    width:min(900px, 100%); background:#fff; border:1px solid #d1d5db; border-radius:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #d1d5db;">
+      <div style="font-weight:700;">Wavelength + convolved spectrum (TSV)</div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button id="btnCopyData" style="padding:8px 10px; border-radius:10px;">Copy</button>
+        <button id="btnCloseModal" style="padding:8px 10px; border-radius:10px;">Close</button>
+      </div>
+    </div>
+    <div style="padding:12px 14px;">
+      <textarea id="dataText" style="
+        width:100%; height:420px; box-sizing:border-box; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+        font-size:12px; border:1px solid #d1d5db; border-radius:10px; padding:10px;"></textarea>
+      <div id="dataMsg" style="margin-top:8px; font-size:12px; color:#4b5563;"></div>
     </div>
   </div>
 </div>
@@ -125,102 +199,157 @@
   const DEF_S_A = parseFloat("__STEP__");
   const DEF_R   = parseFloat("__R500__");
 
-  // Internal state is ALWAYS Å
+  // Internal state ALWAYS Å
+  let centerA = 6562.800;      // Hα default
+  let windowBaseA = DEF_W_A;   // base window value (Å)
+  let windowMult = 1;          // ×1, ×2, ×5
+  let stepA = DEF_S_A;         // step size (Å)
+
   let startA = WMIN_A;
   let widthA = DEF_W_A;
-  let stepA  = DEF_S_A;
-  let r500   = DEF_R;
-  let alt    = 2500;
 
-  // UI toggles
+  let r500 = DEF_R;            // numeric; >=1e8 means ∞
+  let alt = 2500;
+
   let labelsOn = true;
-  let legendOn = false;          // user setting
-  let firstLoadLegend = true;    // show legend ONCE on first render
-  let unit = "A";                // "A" or "nm" (plotting only)
+  let legendOn = false;
+  let firstLoadLegend = true;  // show legend once on first successful render
+  let unit = "A";              // "A" or "nm" (display only)
 
   const el = (id) => document.getElementById(id);
 
-  const startInput = el("startInput");
-  const widthInput = el("widthInput");
-  const stepInput  = el("stepInput");
-  const r500Input  = el("r500Input");
-  const altSelect  = el("altSelect");
-
-  const btnLabels   = el("btnLabels");
-  const btnLegend   = el("btnLegend");
-  const btnUnit     = el("btnUnit");
+  const btnLabels = el("btnLabels");
+  const btnLegend = el("btnLegend");
+  const btnUnit   = el("btnUnit");
   const btnDownload = el("btnDownload");
-  const btnPrev = el("btnPrev");
-  const btnNext = el("btnNext");
-  const btnGo   = el("btnGo");
+  const btnData     = el("btnData");
+
+  const centerInput = el("centerInput");
+  const btnCenterGo = el("btnCenterGo");
+
+  const btnWin1 = el("btnWin1");
+  const btnWin2 = el("btnWin2");
+  const btnWin5 = el("btnWin5");
+  const windowInput = el("windowInput");
+
+  const btnStepLeft  = el("btnStepLeft");
+  const btnStepRight = el("btnStepRight");
+  const stepInput    = el("stepInput");
+
+  const btnR20  = el("btnR20");
+  const btnR40  = el("btnR40");
+  const btnR100 = el("btnR100");
+  const btnR200 = el("btnR200");
+  const btnRinf = el("btnRinf");
+  const r500Input = el("r500Input");
+
+  const btnAlt0 = el("btnAlt0");
+  const btnAlt2500 = el("btnAlt2500");
+
+  const unitTextC = el("unitTextC");
+  const unitTextW = el("unitTextW");
+  const unitTextS = el("unitTextS");
 
   const img = el("img");
   const status = el("status");
+  const hoverPill = el("hoverPill");
+  const rangePill = el("rangePill");
 
-  const unitText1 = el("unitText1");
-  const unitText2 = el("unitText2");
-  const unitText3 = el("unitText3");
-  const rangeText = el("rangeText");
+  // modal
+  const modal = el("modal");
+  const btnCloseModal = el("btnCloseModal");
+  const btnCopyData   = el("btnCopyData");
+  const dataText      = el("dataText");
+  const dataMsg       = el("dataMsg");
 
-  function factorToA() {
-    // displayed -> Å
-    return (unit === "nm") ? 10.0 : 1.0;
-  }
+  function factorToA() { return (unit === "nm") ? 10.0 : 1.0; }   // displayed -> Å
+  function factorFromA(){ return (unit === "nm") ? 0.1 : 1.0; }   // Å -> displayed
 
-  function fmt(x) {
+  function fmt3(x) {
     if (!isFinite(x)) return "";
     return (Math.round(x*1000)/1000).toString();
   }
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
-  function clamp(v, lo, hi) {
-    return Math.max(lo, Math.min(hi, v));
+  function openModal(){ modal.style.display = "flex"; }
+  function closeModal(){ modal.style.display = "none"; }
+
+  function setWindowMultiplier(m){
+    windowMult = m;
+    btnWin1.classList.toggle("active", m === 1);
+    btnWin2.classList.toggle("active", m === 2);
+    btnWin5.classList.toggle("active", m === 5);
+    recalcWindowFromCenter();
   }
 
-  function syncInputsFromState() {
-    const f = factorToA();
-    startInput.value = fmt(startA / f);
-    widthInput.value = fmt(widthA / f);
-    stepInput.value  = fmt(stepA / f);
-    r500Input.value  = (r500 >= 1e8) ? "" : String(Math.round(r500));
-    altSelect.value  = String(alt);
+  function setResolutionButtonActive(which){
+    [btnR20,btnR40,btnR100,btnR200,btnRinf].forEach(b => b.classList.remove("active"));
+    which.classList.add("active");
+  }
+
+  function setAltitude(a){
+    alt = a;
+    btnAlt0.classList.toggle("active", alt === 0);
+    btnAlt2500.classList.toggle("active", alt === 2500);
+  }
+
+  function recalcWindowFromCenter(){
+    widthA = Math.max(0.1, windowBaseA * windowMult);
+    startA = centerA - 0.5 * widthA;
+
+    if (startA < WMIN_A) startA = WMIN_A;
+    if (startA > WMAX_A - 0.1) startA = WMAX_A - 0.1;
+
+    widthA = clamp(widthA, 0.1, (WMAX_A - startA));
+  }
+
+  function syncUIFromState(){
+    const f = factorFromA();
+
+    centerInput.value = fmt3(centerA * f);
+    windowInput.value = fmt3(windowBaseA * f);
+    stepInput.value   = fmt3(stepA * f);
+
+    // R input: blank means ∞
+    r500Input.value = (r500 >= 1e8) ? "" : String(Math.round(r500));
 
     btnLabels.classList.toggle("active", labelsOn);
     btnLegend.classList.toggle("active", legendOn);
     btnUnit.textContent = (unit === "nm") ? "nm" : "Å";
 
-    unitText1.textContent = (unit === "nm") ? "nm" : "Å";
-    unitText2.textContent = (unit === "nm") ? "nm" : "Å";
-    unitText3.textContent = (unit === "nm") ? "nm" : "Å";
+    unitTextC.textContent = (unit === "nm") ? "nm" : "Å";
+    unitTextW.textContent = (unit === "nm") ? "nm" : "Å";
+    unitTextS.textContent = (unit === "nm") ? "nm" : "Å";
 
-    rangeText.textContent = `${(WMIN_A/f).toFixed(1)}–${(WMAX_A/f).toFixed(1)} ${(unit === "nm") ? "nm" : "Å"}`;
+    const startDisp = startA * f;
+    const endDisp   = (startA + widthA) * f;
+    rangePill.textContent = `range: ${startDisp.toFixed(3)}–${endDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
   }
 
-  function readInputsToState() {
-    const f = factorToA();
-    const s = parseFloat(startInput.value);
-    const w = parseFloat(widthInput.value);
+  function readUIToState(){
+    const toA = factorToA();
+
+    const c = parseFloat(centerInput.value);
+    const w = parseFloat(windowInput.value);
     const st= parseFloat(stepInput.value);
     const r = parseFloat(r500Input.value);
 
-    if (isFinite(s)) startA = s * f;
-    if (isFinite(w)) widthA = w * f;
-    if (isFinite(st)) stepA = st * f;
+    if (isFinite(c)) centerA = c * toA;
+    if (isFinite(w)) windowBaseA = w * toA;
+    if (isFinite(st)) stepA = st * toA;
 
-    // allow empty => infinity
+    windowBaseA = clamp(windowBaseA, 0.1, (WMAX_A - WMIN_A));
+    stepA = clamp(stepA, 0.001, (WMAX_A - WMIN_A));
+
     r500 = (isFinite(r) && r > 0) ? r : 1e12;
 
-    startA = clamp(startA, WMIN_A, WMAX_A);
-    widthA = clamp(widthA, 0.1, (WMAX_A - WMIN_A));
-    stepA  = clamp(stepA,  0.1, (WMAX_A - WMIN_A));
-    alt    = parseInt(altSelect.value || "2500", 10);
-    if (![0,2500].includes(alt)) alt = 2500;
+    centerA = clamp(centerA, WMIN_A, WMAX_A);
+    recalcWindowFromCenter();
   }
 
-  function buildUrl() {
-    // legend: show on first render once, then only if user enabled
+  function buildUrl(){
     const legendParam = (firstLoadLegend || legendOn) ? 1 : 0;
-
-    const u = new URL(window.location.origin + "/segment.png");
+    const u = new URL("segment.png", window.location.href);
     u.searchParams.set("start",  startA.toFixed(6));
     u.searchParams.set("width",  widthA.toFixed(6));
     u.searchParams.set("R500",   r500.toFixed(6));
@@ -228,84 +357,99 @@
     u.searchParams.set("labels", labelsOn ? "1" : "0");
     u.searchParams.set("legend", legendParam ? "1" : "0");
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
-    // cache buster
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
 
-  function render() {
-    readInputsToState();
-    syncInputsFromState();
+  function buildDataUrl(){
+    const u = new URL("segment.txt", window.location.href);
+    u.searchParams.set("start",  startA.toFixed(6));
+    u.searchParams.set("width",  widthA.toFixed(6));
+    u.searchParams.set("R500",   r500.toFixed(6));
+    u.searchParams.set("alt",    String(alt));
+    u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+    u.searchParams.set("_", String(Date.now()));
+    return u.toString();
+  }
 
+  function render(){
+    readUIToState();
+    syncUIFromState();
+
+    const f = factorFromA();
     const endA = Math.min(startA + widthA, WMAX_A);
-    const f = factorToA();
+
     status.textContent =
-      `start=${(startA/f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}, ` +
-      `end=${(endA/f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}, ` +
-      `width=${(widthA/f).toFixed(3)}, step=${(stepA/f).toFixed(3)}\n` +
-      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}, alt=${alt} m, ` +
-      `labels=${labelsOn?1:0}, legend=${(firstLoadLegend||legendOn)?1:0}`;
+      `center=${(centerA*f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}  ` +
+      `start=${(startA*f).toFixed(3)}  end=${(endA*f).toFixed(3)}  ` +
+      `width=${(widthA*f).toFixed(3)}  step=${(stepA*f).toFixed(3)}\n` +
+      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  ` +
+      `labels=${labelsOn?1:0}  legend=${(firstLoadLegend||legendOn)?1:0}`;
 
     const url = buildUrl();
 
     img.onload = () => {
-      // after first successful render, turn legend off unless user explicitly enabled it
       if (firstLoadLegend) {
         firstLoadLegend = false;
         legendOn = false;
         btnLegend.classList.remove("active");
       }
     };
+
     img.onerror = async () => {
-      status.textContent += "\n[error] failed to load image (check /meta and server logs)";
+      try {
+        const resp = await fetch(img.src, { cache: "no-store" });
+        const txt  = await resp.text();
+        status.textContent += `\n\n[IMAGE LOAD FAILED]\nHTTP ${resp.status}\n${txt ? txt : "(empty response)"}`;
+      } catch (e) {
+        status.textContent += `\n\n[IMAGE LOAD FAILED]\n${e}`;
+      }
     };
+
     img.src = url;
   }
 
-  // -------- Buttons --------
-  btnLabels.addEventListener("click", () => {
-    labelsOn = !labelsOn;
-    render();
-  });
+  // ---- hover wavelength readout ----
+  function updateHover(ev){
+    const rect = img.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    if (x < 0 || x > rect.width) {
+      hoverPill.textContent = "hover: —";
+      return;
+    }
+    const frac = rect.width > 0 ? (x / rect.width) : 0;
+    const lamA = startA + frac * widthA;
+    const lamDisp = lamA * factorFromA();
+    hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
+  }
+  img.addEventListener("mousemove", updateHover);
+  img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
 
-  btnLegend.addEventListener("click", () => {
-    legendOn = !legendOn;
-    render();
-  });
-
+  // ---- row 1 ----
+  btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; render(); });
+  btnLegend.addEventListener("click", () => { legendOn = !legendOn; render(); });
   btnUnit.addEventListener("click", () => {
     unit = (unit === "nm") ? "A" : "nm";
+    syncUIFromState();
     render();
   });
 
-  btnPrev.addEventListener("click", () => {
-    readInputsToState();
-    startA = clamp(startA - stepA, WMIN_A, WMAX_A);
-    render();
-  });
-
-  btnNext.addEventListener("click", () => {
-    readInputsToState();
-    startA = clamp(startA + stepA, WMIN_A, WMAX_A);
-    render();
-  });
-
-  btnGo.addEventListener("click", () => render());
-
-  // Download the CURRENT image
+  // Download current PNG
   btnDownload.addEventListener("click", async () => {
     try {
       const url = img.src;
       const resp = await fetch(url, { cache: "no-store" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const blob = await resp.blob();
+
       const a = document.createElement("a");
-      const f = factorToA();
+      const unitLbl = (unit === "nm") ? "nm" : "A";
       const endA = Math.min(startA + widthA, WMAX_A);
-      const startDisp = (startA / f).toFixed(3);
-      const endDisp   = (endA   / f).toFixed(3);
-      const unitLbl   = (unit === "nm") ? "nm" : "A";
-      a.download = `atlas_${startDisp}-${endDisp}_${unitLbl}.png`;
+      const f = factorFromA();
+      const startDisp = (startA * f).toFixed(3);
+      const endDisp   = (endA   * f).toFixed(3);
+      a.download = `atlas_${startDisp}-${endDisp}_${unitLbl}_R${(r500>=1e8?"inf":Math.round(r500))}_alt${alt}.png`;
+
       a.href = URL.createObjectURL(blob);
       document.body.appendChild(a);
       a.click();
@@ -316,20 +460,116 @@
     }
   });
 
-  // Enter key triggers render
-  [startInput, widthInput, stepInput, r500Input].forEach((x) => {
+  // Show data modal
+  btnData.addEventListener("click", async () => {
+    try {
+      dataMsg.textContent = "Loading…";
+      openModal();
+
+      readUIToState();
+      syncUIFromState();
+
+      const url = buildDataUrl();
+      const resp = await fetch(url, { cache: "no-store" });
+      const txt = await resp.text();
+
+      if (!resp.ok) {
+        dataText.value = txt;
+        dataMsg.textContent = `Error: HTTP ${resp.status}`;
+        return;
+      }
+
+      dataText.value = txt;
+      dataText.scrollTop = 0;
+      dataMsg.textContent = "TSV: wavelength + y_final. Copy or paste into Python/IDL/Excel.";
+    } catch (e) {
+      dataText.value = String(e);
+      dataMsg.textContent = "Error.";
+    }
+  });
+
+  btnCloseModal.addEventListener("click", () => closeModal());
+  modal.addEventListener("click", (ev) => { if (ev.target === modal) closeModal(); });
+
+  btnCopyData.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(dataText.value || "");
+      dataMsg.textContent = "Copied to clipboard.";
+    } catch (e) {
+      dataMsg.textContent = `Copy failed: ${e}`;
+    }
+  });
+
+  // ---- row 2 ----
+  btnCenterGo.addEventListener("click", () => render());
+
+  btnWin1.addEventListener("click", () => { setWindowMultiplier(1); render(); });
+  btnWin2.addEventListener("click", () => { setWindowMultiplier(2); render(); });
+  btnWin5.addEventListener("click", () => { setWindowMultiplier(5); render(); });
+
+  btnStepLeft.addEventListener("click", () => {
+    readUIToState();
+    centerA = clamp(centerA - stepA, WMIN_A, WMAX_A);
+    recalcWindowFromCenter();
+    syncUIFromState();
+    render();
+  });
+
+  btnStepRight.addEventListener("click", () => {
+    readUIToState();
+    centerA = clamp(centerA + stepA, WMIN_A, WMAX_A);
+    recalcWindowFromCenter();
+    syncUIFromState();
+    render();
+  });
+
+  // Enter triggers render
+  [centerInput, windowInput, stepInput, r500Input].forEach((x) => {
     x.addEventListener("keydown", (ev) => { if (ev.key === "Enter") render(); });
   });
-  altSelect.addEventListener("change", () => render());
 
-  // Init
-  startA = WMIN_A;
-  widthA = DEF_W_A;
-  stepA  = DEF_S_A;
-  r500   = DEF_R;
-  alt    = 2500;
+  // ---- row 3 resolution (write into r500Input so readUIToState doesn't overwrite) ----
+  btnR20.addEventListener("click", () => {
+    r500Input.value = "20000"; r500 = 20000;
+    setResolutionButtonActive(btnR20);
+    render();
+  });
+  btnR40.addEventListener("click", () => {
+    r500Input.value = "40000"; r500 = 40000;
+    setResolutionButtonActive(btnR40);
+    render();
+  });
+  btnR100.addEventListener("click", () => {
+    r500Input.value = "100000"; r500 = 100000;
+    setResolutionButtonActive(btnR100);
+    render();
+  });
+  btnR200.addEventListener("click", () => {
+    r500Input.value = "200000"; r500 = 200000;
+    setResolutionButtonActive(btnR200);
+    render();
+  });
+  btnRinf.addEventListener("click", () => {
+    r500Input.value = ""; r500 = 1e12;
+    setResolutionButtonActive(btnRinf);
+    render();
+  });
 
-  syncInputsFromState();
+  // Altitude buttons
+  btnAlt0.addEventListener("click", () => { setAltitude(0); render(); });
+  btnAlt2500.addEventListener("click", () => { setAltitude(2500); render(); });
+
+  // ---- init ----
+  centerA = clamp(centerA, WMIN_A, WMAX_A);
+  windowBaseA = DEF_W_A;
+  stepA = DEF_S_A;
+  setWindowMultiplier(1);
+  setAltitude(2500);
+
+  r500 = DEF_R;
+  setResolutionButtonActive(btnRinf);
+
+  syncUIFromState();
   render();
 })();
 </script>

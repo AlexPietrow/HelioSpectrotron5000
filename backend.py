@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Spectrum scroller backend (FastAPI)
+"""
+Spectrum scroller backend (FastAPI)
 
-SkyCalc removed.
 Loads precomputed TAPAS tellurics from:
   telat_alt0.npy  (alt=0 m)
   telat_alt1.npy  (alt=2500 m)
@@ -15,11 +15,13 @@ Invariants:
 - PHYSICALLY CORRECT ORDER:
       y_final = (solar * telluric) ⊗ LSF
 - 2D strip is ALWAYS tiled from y_final (post-processing).
+- Tellurics displayed are convolved for UI consistency:
+      t_disp = telluric ⊗ LSF
 
 Controls (via query params):
 - labels=0/1  : line-name overlay
-- legend=0/1  : matplotlib legend (off by default; frontend can show once on first load)
-- unit=A/nm   : plotting unit only (data selection remains in Å)
+- legend=0/1  : matplotlib legend
+- unit=A/nm   : plotting unit only (selection in Å)
 - R500        : resolving power at 500 nm; uses FWHM_A = 5000 / R500
 
 Run:
@@ -29,8 +31,8 @@ Run:
 import io
 import os
 import gc
-import traceback
 import sys
+import traceback
 from typing import Optional, Tuple, Dict
 
 import numpy as np
@@ -65,7 +67,7 @@ ISPY_BUNDLE = os.path.join(HERE, "ISPy")
 if os.path.isdir(ISPY_BUNDLE) and ISPY_BUNDLE not in sys.path:
     sys.path.insert(0, ISPY_BUNDLE)
 
-from ISPy.spec import atlas as ispy_atlas
+from ISPy.spec import atlas as ispy_atlas  # noqa: E402
 
 # Telluric files (TAPAS precomputed)
 TELL_FILE_ALT0 = os.environ.get("TELL_FILE_ALT0", os.path.join(HERE, "telat_alt0.npy"))  # 0 m
@@ -79,31 +81,64 @@ OLD_LINE_CSV = os.path.join(HERE, "all_pages_clean_filtered_clean.csv")
 NEW_LINE_CSV = os.path.join(HERE, "all_pages_lines_wav_strength_id.csv")
 
 # ----------------------------
-# ISPy atlas (lazy to avoid reload thrash)
+# ISPy atlas (lazy)
 # ----------------------------
 _fts = None
+_ATLAS_WMIN = None
+_ATLAS_WMAX = None
 
 def get_fts():
-    global _fts
+    global _fts, _ATLAS_WMIN, _ATLAS_WMAX
     if _fts is None:
         _fts = ispy_atlas.atlas()
+        # Determine atlas wavelength coverage once
+        try:
+            w = np.asarray(getattr(_fts, "wave"), dtype=float)
+            w = w[np.isfinite(w)]
+            if w.size > 0:
+                _ATLAS_WMIN = float(np.nanmin(w))
+                _ATLAS_WMAX = float(np.nanmax(w))
+        except Exception:
+            _ATLAS_WMIN = None
+            _ATLAS_WMAX = None
     return _fts
 
+def get_atlas_range() -> Tuple[float, float]:
+    _ = get_fts()
+    if _ATLAS_WMIN is None or _ATLAS_WMAX is None:
+        raise RuntimeError("Could not determine ISPy atlas wavelength range (fts.wave missing/empty).")
+    return _ATLAS_WMIN, _ATLAS_WMAX
+
 def fetch_ispy_air_norm(w0: float, w1: float):
-    """Return wavelength [Å] and normalized intensity for [w0, w1]."""
+    """Return wavelength [Å] and normalized intensity for [w0, w1].
+    Robust to empty atlas coverage: returns empty arrays instead of raising.
+    """
     pad = 0.5
     fts = get_fts()
-    wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=True)
+    try:
+        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=True)
+    except Exception:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
     wav = np.asarray(wav, dtype=float)
     I = np.asarray(I, dtype=float)
     cont = np.asarray(cont, dtype=float)
+
+    if wav.size == 0 or I.size == 0 or cont.size == 0:
+        return np.array([], dtype=float), np.array([], dtype=float)
 
     cont_safe = np.where(cont > 0, cont, np.nan)
     I_norm = I / cont_safe
     I_norm = np.clip(I_norm, 0, np.nanmax(I_norm))
 
     sel = (wav >= w0) & (wav <= w1)
-    return wav[sel], I_norm[sel]
+    wav = wav[sel]
+    I_norm = I_norm[sel]
+
+    if wav.size == 0:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    return wav, I_norm
 
 # ----------------------------
 # Gaussian convolution (no SciPy)
@@ -179,13 +214,27 @@ TELLURICS: Dict[int, Tuple[np.ndarray, np.ndarray]] = {
     2500: _load_telat(TELL_FILE_ALT1),
 }
 
-_wmins = [float(np.nanmin(TELLURICS[k][0])) for k in TELLURICS]
-_wmaxs = [float(np.nanmax(TELLURICS[k][0])) for k in TELLURICS]
-WMIN = max(GLOBAL_WMIN_A, max(_wmins))
-WMAX = min(GLOBAL_WMAX_A, min(_wmaxs))
+# Telluric coverage
+_tmins = [float(np.nanmin(TELLURICS[k][0])) for k in TELLURICS]
+_tmaxs = [float(np.nanmax(TELLURICS[k][0])) for k in TELLURICS]
+TELL_WMIN = max(_tmins)
+TELL_WMAX = min(_tmaxs)
+
+# Atlas coverage
+ATLAS_WMIN, ATLAS_WMAX = get_atlas_range()
+
+# Final intersection
+WMIN = max(GLOBAL_WMIN_A, TELL_WMIN, ATLAS_WMIN)
+WMAX = min(GLOBAL_WMAX_A, TELL_WMAX, ATLAS_WMAX)
 
 if not (np.isfinite(WMIN) and np.isfinite(WMAX) and WMIN < WMAX):
-    raise RuntimeError(f"Invalid telluric wavelength intersection: WMIN={WMIN}, WMAX={WMAX}")
+    raise RuntimeError(
+        "Invalid wavelength intersection:\n"
+        f"  GLOBAL: {GLOBAL_WMIN_A}–{GLOBAL_WMAX_A}\n"
+        f"  TELL:   {TELL_WMIN}–{TELL_WMAX}\n"
+        f"  ATLAS:  {ATLAS_WMIN}–{ATLAS_WMAX}\n"
+        f"  FINAL:  {WMIN}–{WMAX}\n"
+    )
 
 # ----------------------------
 # Line overlays (Moore + IA/strength) — robust loaders
@@ -227,7 +276,7 @@ def clean_strength(val):
     return float(m.group(0)) if m else np.nan
 
 def _read_csv_auto(path: str):
-    """Try comma, then semicolon. Returns DataFrame."""
+    """Try comma, then semicolon."""
     import pandas as pd
     df = pd.read_csv(path)
     if len(df.columns) == 1 and ";" in str(df.columns[0]):
@@ -302,7 +351,15 @@ except Exception as e:
 # ----------------------------
 # Rendering
 # ----------------------------
-def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels_on: bool, legend_on: bool, unit: str) -> bytes:
+def render_segment_png(
+    start: float,
+    end: float,
+    R500: float,
+    alt_m: int,
+    labels_on: bool,
+    legend_on: bool,
+    unit: str
+) -> bytes:
     """Render [start,end] slice (selection in Å). unit affects plotting only."""
     unit = (unit or "A").strip().lower()
     plot_in_nm = unit in ("nm", "nanometer", "nanometers")
@@ -332,8 +389,12 @@ def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels
     t_seg = np.interp(w, twav, tint)
 
     # ---- PHYSICALLY CORRECT ORDER ----
+    # final spectrum: (solar * telluric) convolved
     y_highres = np.asarray(f_norm * t_seg, dtype=float)
     y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
+
+    # tellurics for DISPLAY: convolve telluric transmission too
+    t_disp = np.asarray(apply_resolution_R500(w, t_seg, R500), dtype=float)
 
     # Convert plotting units (data selection remains in Å)
     w_plot     = (w / 10.0) if plot_in_nm else w
@@ -343,15 +404,16 @@ def render_segment_png(start: float, end: float, R500: float, alt_m: int, labels
 
     # Plot tellurics (red behind) and final spectrum (black)
     if legend_on:
-        ax1.plot(w_plot, t_seg,   color="red",   lw=1.0, zorder=3, label="Tellurics")
+        ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics (convolved)")
         ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum")
     else:
-        ax1.plot(w_plot, t_seg,   color="red",   lw=1.0, zorder=3)
+        ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3)
         ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2)
 
     ax1.set_xlim(start_plot, end_plot)
     ax1.set_ylim(0, 1.20)
     ax1.set_ylabel("Normalized intensity")
+
     r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
     ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m)")
     if legend_on:
@@ -434,7 +496,10 @@ def healthz():
 @app.get("/meta", response_class=PlainTextResponse)
 def meta():
     return PlainTextResponse(
-        f"WMIN={WMIN}\nWMAX={WMAX}\nDEFAULT_WIDTH_A={DEFAULT_WIDTH_A}\nDEFAULT_STEP_A={DEFAULT_STEP_A}\n"
+        f"WMIN={WMIN}\nWMAX={WMAX}\n"
+        f"ATLAS_WMIN={ATLAS_WMIN}\nATLAS_WMAX={ATLAS_WMAX}\n"
+        f"TELL_WMIN={TELL_WMIN}\nTELL_WMAX={TELL_WMAX}\n"
+        f"DEFAULT_WIDTH_A={DEFAULT_WIDTH_A}\nDEFAULT_STEP_A={DEFAULT_STEP_A}\n"
         f"DEFAULT_R500={DEFAULT_R500}\n"
         f"TELL0={TELL_FILE_ALT0}\nTELL1={TELL_FILE_ALT1}\nINDEX={INDEX_HTML}\n"
         f"OLD_LINE_CSV={OLD_LINE_CSV}\nNEW_LINE_CSV={NEW_LINE_CSV}\n"
@@ -479,15 +544,11 @@ def segment_png(
         R500 = DEFAULT_R500 if (R500 is None) else float(R500)
 
         # clamp
-        width = max(0.1, min(width, WMAX - WMIN))
-        end = min(start + width, WMAX)
+        start = max(WMIN, min(start, WMAX - 0.1))
+        width = max(0.1, min(width, WMAX - start))
+        end = start + width
 
-        # only allow 0/2500
         alt_m = int(alt) if int(alt) in (0, 2500) else 2500
-
-        if start < WMIN or start > WMAX:
-            return Response(content=b"", media_type="image/png", status_code=416)
-
         labels_on = bool(int(labels)) if labels is not None else True
         legend_on = bool(int(legend)) if legend is not None else False
 
@@ -499,8 +560,70 @@ def segment_png(
             legend_on=legend_on,
             unit=unit,
         )
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
 
     except Exception:
         tb = traceback.format_exc()
+        print(tb, flush=True)
+        return Response(
+            content=tb.encode("utf-8", errors="replace"),
+            media_type="text/plain; charset=utf-8",
+            status_code=500,
+            headers={"Cache-Control": "no-store"},
+        )
+
+@app.get("/segment.txt", response_class=PlainTextResponse)
+def segment_txt(
+    start: float,
+    width: Optional[float] = None,
+    R500: Optional[float] = None,
+    alt: Optional[int] = 2500,   # 0 or 2500 (meters)
+    labels: Optional[int] = 1,   # unused; kept for symmetry
+    legend: Optional[int] = 0,   # unused; kept for symmetry
+    unit: Optional[str] = "A",   # output unit: 'A' or 'nm'
+):
+    try:
+        start = float(start)
+        width = float(width) if width is not None else DEFAULT_WIDTH_A
+        R500 = DEFAULT_R500 if (R500 is None) else float(R500)
+
+        # clamp
+        start = max(WMIN, min(start, WMAX - 0.1))
+        width = max(0.1, min(width, WMAX - start))
+        end = start + width
+
+        alt_m = int(alt) if int(alt) in (0, 2500) else 2500
+
+        # data in Å
+        w, f_norm = fetch_ispy_air_norm(start, end)
+        if w.size == 0:
+            return PlainTextResponse("# empty slice\n", status_code=200)
+
+        twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
+        t_seg = np.interp(w, twav, tint)
+
+        # Physically correct final spectrum
+        y_highres = np.asarray(f_norm * t_seg, dtype=float)
+        y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
+
+        # Output units
+        u = (unit or "A").strip().lower()
+        if u in ("nm", "nanometer", "nanometers"):
+            w_out = w / 10.0
+            unit_label = "nm"
+        else:
+            w_out = w
+            unit_label = "A"
+
+        lines = [f"# wavelength[{unit_label}]\ty_final"]
+        lines += [f"{ww:.6f}\t{yy:.8f}" for ww, yy in zip(w_out, y_final)]
+        return PlainTextResponse("\n".join(lines) + "\n", status_code=200)
+
+    except Exception:
+        tb = traceback.format_exc()
+        print(tb, flush=True)
         return PlainTextResponse(tb, status_code=500)
