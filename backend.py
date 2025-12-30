@@ -19,10 +19,11 @@ Invariants:
       t_disp = telluric ⊗ LSF
 
 Controls (via query params):
-- labels=0/1  : line-name overlay
-- legend=0/1  : matplotlib legend
-- unit=A/nm   : plotting unit only (selection in Å)
-- R500        : resolving power at 500 nm; uses FWHM_A = 5000 / R500
+- labels=0/1     : line-name overlay
+- legend=0/1     : matplotlib legend
+- tellurics=0/1  : multiply by telluric transmission + plot tellurics overlay
+- unit=A/nm      : plotting unit only (selection in Å)
+- R500           : resolving power at 500 nm; uses FWHM_A = 5000 / R500
 
 Run:
   uvicorn backend:app --reload --port 8000
@@ -89,26 +90,21 @@ _ATLAS_WMIN = None
 _ATLAS_WMAX = None
 
 def get_fts():
-    global _fts, _ATLAS_WMIN, _ATLAS_WMAX
-    if _fts is None:
-        _fts = ispy_atlas.atlas()
-        # Determine atlas wavelength coverage once
-        try:
-            w = np.asarray(getattr(_fts, "wave"), dtype=float)
-            w = w[np.isfinite(w)]
-            if w.size > 0:
-                _ATLAS_WMIN = float(np.nanmin(w))
-                _ATLAS_WMAX = float(np.nanmax(w))
-        except Exception:
-            _ATLAS_WMIN = None
-            _ATLAS_WMAX = None
-    return _fts
+    """Return a FRESH ISPy atlas instance.
+
+    ISPy's atlas.to() mutates internal arrays in-place. Reusing a single instance
+    across requests will corrupt units when switching perHz. Therefore, we create
+    a new instance for every fetch.
+    """
+    return ispy_atlas.atlas()
 
 def get_atlas_range() -> Tuple[float, float]:
-    _ = get_fts()
-    if _ATLAS_WMIN is None or _ATLAS_WMAX is None:
+    fts = get_fts()
+    w = np.asarray(getattr(fts, "wave"), dtype=float)
+    w = w[np.isfinite(w)]
+    if w.size == 0:
         raise RuntimeError("Could not determine ISPy atlas wavelength range (fts.wave missing/empty).")
-    return _ATLAS_WMIN, _ATLAS_WMAX
+    return float(np.nanmin(w)), float(np.nanmax(w))
 
 def fetch_ispy_air_norm(w0: float, w1: float):
     """Return wavelength [Å] and normalized intensity for [w0, w1].
@@ -117,7 +113,7 @@ def fetch_ispy_air_norm(w0: float, w1: float):
     pad = 0.5
     fts = get_fts()
     try:
-        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=True)
+        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=False)
     except Exception:
         return np.array([], dtype=float), np.array([], dtype=float)
 
@@ -145,18 +141,31 @@ def fetch_ispy_air_norm(w0: float, w1: float):
 # Gaussian convolution (no SciPy)
 # ----------------------------
 
-def fetch_ispy_air_cgs(w0: float, w1: float):
-    """Return wavelength [Å] and absolute intensity in cgs for [w0, w1].
-
-    Notes
-    -----
-    This uses the ISPy FTS interface with cgs=True and perHz=True, matching the
-    normalized pathway. The returned intensity is *not* continuum-normalized.
-    """
+def fetch_ispy_air_cgs_fnu(w0: float, w1: float):
+    """Return wavelength [Å] and absolute intensity in cgs per Hz (I_nu) for [w0, w1]."""
     pad = 0.5
     fts = get_fts()
     try:
         wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=True)
+    except Exception:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    wav = np.asarray(wav, dtype=float)
+    I = np.asarray(I, dtype=float)
+
+    if wav.size == 0 or I.size == 0:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    sel = (wav >= w0) & (wav <= w1)
+    return wav[sel], I[sel]
+
+
+def fetch_ispy_air_cgs_flam(w0: float, w1: float):
+    """Return wavelength [Å] and absolute intensity in cgs per Å (I_lambda) for [w0, w1]."""
+    pad = 0.5
+    fts = get_fts()
+    try:
+        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=False)
     except Exception:
         return np.array([], dtype=float), np.array([], dtype=float)
 
@@ -324,10 +333,6 @@ def bin_lines(wav: np.ndarray, ids: np.ndarray, bin_A: float = 0.2):
 
     return wav[idx], ids[idx]
 
-def fnu_to_flam(lam_A, Fnu):
-    lam_cm = np.asarray(lam_A) * 1e-8
-    Fnu = np.asarray(Fnu)
-    return Fnu * 2.99792458e10 / lam_cm**2 * 1e-8
 
 def load_moore_lines(path: str):
     """Moore list CSV expected columns: (wavelength or wav), ew, id."""
@@ -356,6 +361,8 @@ def load_moore_lines(path: str):
         return np.array([], dtype=float), np.array([], dtype=str)
 
     return df["wavelength"].to_numpy(float), df["id"].to_numpy(str)
+
+
 
 def load_ia_lines(path: str):
     """IA/strength CSV expected columns: wav, strength, id."""
@@ -414,11 +421,17 @@ def render_segment_png(
     plot_in_nm = unit in ("nm", "nanometer", "nanometers")
 
     flux = (flux or "norm").strip().lower()
+
     plot_cgs = (flux != "norm")
+    tell_scale = 1.0  # updated in absolute-flux modes
     if flux == "norm":
         w, y_base = fetch_ispy_air_norm(start, end)
+    elif flux == "cgs":
+        w, y_base = fetch_ispy_air_cgs_fnu(start, end)
+    elif flux == "flam":
+        w, y_base = fetch_ispy_air_cgs_flam(start, end)
     else:
-        w, y_base = fetch_ispy_air_cgs(start, end)
+        w, y_base = fetch_ispy_air_norm(start, end)
 
     fig, (ax1, ax2) = plt.subplots(
         nrows=2,
@@ -442,15 +455,20 @@ def render_segment_png(
     # Interpolate tellurics onto atlas wavelength cut
     t_seg = np.interp(w, twav, tint)
 
+    # Toggle telluric application/overlay
+    if not tellurics_on:
+        t_seg = np.ones_like(t_seg)
+        # keep a display array for plotting code paths
+        tint_for_display = np.ones_like(w)
+    else:
+        tint_for_display = t_seg
+
     # ---- PHYSICALLY CORRECT ORDER ----
+    # final spectrum: (solar * telluric) convolved
     y_highres = np.asarray(y_base * t_seg, dtype=float)
     y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
-
-    if flux == "flam":
-        y_final = fnu_to_flam(w, y_final)
-
     # tellurics for DISPLAY: convolve telluric transmission too
-    t_disp = np.asarray(apply_resolution_R500(w, t_seg, R500), dtype=float)
+    t_disp = np.asarray(apply_resolution_R500(w, tint_for_display, R500), dtype=float)
 
     # Convert plotting units (data selection remains in Å)
     w_plot     = (w / 10.0) if plot_in_nm else w
@@ -458,97 +476,76 @@ def render_segment_png(
     end_plot   = (end / 10.0) if plot_in_nm else end
     unit_label = "nm" if plot_in_nm else "Å"
 
+    # Plot spectrum + tellurics
     ax1.set_xlim(start_plot, end_plot)
 
     if plot_cgs:
-        # Spectrum on left axis.
+        # Spectrum (absolute units) — NEVER rescale values; only adjust ylim for headroom.
         ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum" if legend_on else None)
 
-        # Dynamic y padding to move the spectrum down (headroom for labels)
-        ymin = float(np.nanmin(y_final))
-        ymax = float(np.nanmax(y_final))
+        # Estimate continuum level (robust): high percentile of y_final within the window.
+        # Used ONLY for axis limits and for mapping the telluric (0–1) axis onto the same height as the continuum.
+        y_cont = float(np.nanpercentile(y_final, 99.0)) if y_final.size else 1.0
+        if not np.isfinite(y_cont) or y_cont <= 0:
+            y_cont = float(np.nanmax(y_final)) if np.isfinite(np.nanmax(y_final)) else 1.0
+        if y_cont <= 0:
+            y_cont = 1.0
 
-        if np.isfinite(ymin) and np.isfinite(ymax) and ymax > ymin:
-            span = ymax - ymin
-            top_pad = 0.20 * span
-            bot_pad = 0.02 * span
-            ax1.set_ylim(ymin - bot_pad, ymax + top_pad)
-        else:
-            ax1.set_ylim(0, 1.0)
+        headroom = 1.20 if labels_on else 1.20
+        ax1.set_ylim(0, headroom * y_cont)
 
-        # Y label depends on flux mode
-        if flux == "flam":
-            ax1.set_ylabel("Intensity (cgs; per Å)")
-        else:
-            ax1.set_ylabel("Intensity (cgs; per Hz)")
-
-        # Tellurics axis: create it whenever tellurics OR label-lines need it.
-        axT = None
-        if tellurics_on or labels_on:
+        # Tellurics overlay: keep values in transmission units (~0–1).
+        # Use a secondary axis via twinx; align transmission=1 with y=y_cont purely through axis limits.
+        if tellurics_on:
             axT = ax1.twinx()
-            axT.set_ylim(0.0, 1.18)  # headroom for the red curve
+            # With left ylim=(0, headroom*y_cont) and right ylim=(0, headroom), t=1 sits at the continuum height.
+            axT.set_ylim(0, headroom)
+            axT.plot(w_plot, t_disp, color="red", lw=1.0, zorder=3,
+                     label="Tellurics" if legend_on else None)
             axT.set_ylabel("Telluric transmission")
+            axT.grid(False)
 
-        # Tellurics curve (red) lives on the telluric axis in cgs/flam modes
-        if tellurics_on and axT is not None:
-            axT.plot(
-                w_plot, t_disp,
-                color="red", lw=1.0, zorder=3,
-                label="Tellurics" if legend_on else None
-            )
+        ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam" else "Intensity (cgs per Hz)" if flux == "cgs" else "Intensity (cgs)")
 
-        # Legend: only merge handles if tellurics were actually plotted
         if legend_on:
-            h1, l1 = ax1.get_legend_handles_labels()
-            if tellurics_on and axT is not None:
+            handles, labels = ax1.get_legend_handles_labels()
+            if tellurics_on:
                 h2, l2 = axT.get_legend_handles_labels()
-                ax1.legend(
-                    h1 + h2, l1 + l2,
-                    loc="upper right",
-                    frameon=True,
-                    facecolor="white",
-                    edgecolor="black",
-                    framealpha=1.0,
-                    fontsize=10,
-                )
-            else:
-                ax1.legend(
-                    loc="upper right",
-                    frameon=True,
-                    facecolor="white",
-                    edgecolor="black",
-                    framealpha=1.0,
-                    fontsize=10,
-                )
+                handles += h2
+                labels  += l2
+            ax1.legend(handles, labels, loc="upper right", frameon=True,
+                       facecolor="white", edgecolor="black", framealpha=1.0, fontsize=10)
 
     else:
         if legend_on:
-            # Keep your original behavior (legend implies tellurics drawn)
-            ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics")
+            if tellurics_on:
+                ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics")
             ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum")
         else:
             if tellurics_on:
-                ax1.plot(w_plot, t_disp, color="red", lw=1.0, zorder=3)
+                ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3)
             ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2)
 
-        ax1.set_ylim(0, 1.20)
+        ax1.set_ylim(0, 1.20 if labels_on else 1.20)
         ax1.set_ylabel("Normalized intensity")
 
         if legend_on:
             ax1.legend(loc="upper right", frameon=True, facecolor="white",
                        edgecolor="black", framealpha=1.0, fontsize=10)
 
-        axT = None  # not used in norm mode
-
     r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
-    flux_txt = "cgs" if plot_cgs else "norm"
-    ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R={r_txt}, alt={alt_m} m, flux={flux_txt})")
+    flux_txt = flux
+    ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, flux={flux_txt})")
+
 
     # ----------------------------
     # Line overlays (gated by labels_on)
     # ----------------------------
     if labels_on:
         MAX_LABELS = 60
+
+        ax_line = ax1
+        y_line_hi = 1.0  # use axes-fraction text placement; ylim provides headroom
 
         if old_wav is not None:
             mask = (old_wav >= start) & (old_wav <= end)
@@ -559,14 +556,15 @@ def render_segment_png(
                 pi = pi[:MAX_LABELS]
             for x, lab in zip(pw, pi):
                 x_plot = (x / 10.0) if plot_in_nm else x
-
-                # Vertical label lines:
-                # - norm: keep exactly as before on ax1 (0..1 in data; your norm ylim is 0..1.2)
-                # - cgs/flam: draw on telluric axis and stop at 1.05 transmission
-                if plot_cgs and (axT is not None):
-                    axT.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.5, zorder=0, color="k")
-                else:
-                    ax1.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.5, zorder=0, color="k")
+                ax1.axvline(
+                    x_plot,
+                    ymin=0.0,
+                    ymax=0.82,
+                    lw=0.4,
+                    alpha=0.5,
+                    zorder=0,
+                    color="k",
+                )
 
                 ax1.text(
                     x_plot, 0.84, lab,
@@ -587,11 +585,15 @@ def render_segment_png(
                 pi = pi[:MAX_LABELS]
             for x, lab in zip(pw, pi):
                 x_plot = (x / 10.0) if plot_in_nm else x
-
-                if plot_cgs and (axT is not None):
-                    axT.plot([x_plot, x_plot], [0.0, 1.05], lw=0.4, alpha=0.7, zorder=0, color="k")
-                else:
-                    ax1.plot([x_plot, x_plot], [0.0, 1.0], lw=0.4, alpha=0.7, zorder=0, color="k")
+                ax1.axvline(
+                    x_plot,
+                    ymin=0.0,
+                    ymax=0.82,
+                    lw=0.4,
+                    alpha=0.5,
+                    zorder=0,
+                    color="k",
+                )
 
                 ax1.text(
                     x_plot, 0.84, lab,
@@ -682,9 +684,9 @@ def segment_png(
     alt: Optional[int] = 2500,   # 0 or 2500 (meters)
     labels: Optional[int] = 1,   # 0/1
     legend: Optional[int] = 0,   # 0/1
-    tellurics: Optional[int] = 1,   # 0/1
+    tellurics: Optional[int] = 1,  # 0/1
     unit: Optional[str] = "A",   # 'A' or 'nm' (plotting only)
-    flux: Optional[str] = "norm",  # 'norm' or 'cgs' or 'flam'
+    flux: Optional[str] = "norm",  # 'norm' or 'cgs'
 ):
     try:
         start = float(start)
@@ -699,6 +701,7 @@ def segment_png(
         alt_m = int(alt) if int(alt) in (0, 2500) else 2500
         labels_on = bool(int(labels)) if labels is not None else True
         legend_on = bool(int(legend)) if legend is not None else False
+
         tellurics_on = bool(int(tellurics)) if tellurics is not None else True
 
         png = render_segment_png(
@@ -735,8 +738,9 @@ def segment_txt(
     alt: Optional[int] = 2500,   # 0 or 2500 (meters)
     labels: Optional[int] = 1,   # unused; kept for symmetry
     legend: Optional[int] = 0,   # unused; kept for symmetry
+    tellurics: Optional[int] = 1,  # 0/1
     unit: Optional[str] = "A",   # output unit: 'A' or 'nm'
-    flux: Optional[str] = "norm",  # 'norm' or 'cgs' or 'flam'
+    flux: Optional[str] = "norm",  # 'norm' or 'cgs'
 ):
     try:
         start = float(start)
@@ -755,22 +759,25 @@ def segment_txt(
         plot_cgs = (flux != "norm")
         if flux == "norm":
             w, y_base = fetch_ispy_air_norm(start, end)
+        elif flux == "cgs":
+            w, y_base = fetch_ispy_air_cgs_fnu(start, end)
+        elif flux == "flam":
+            w, y_base = fetch_ispy_air_cgs_flam(start, end)
         else:
-            w, y_base = fetch_ispy_air_cgs(start, end)
-
+            w, y_base = fetch_ispy_air_norm(start, end)
         if w.size == 0:
             return PlainTextResponse("# empty slice\n", status_code=200)
 
         twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
         t_seg = np.interp(w, twav, tint)
 
+        tellurics_on = bool(int(tellurics)) if tellurics is not None else True
+        if not tellurics_on:
+            t_seg = np.ones_like(t_seg)
+
         # Physically correct final spectrum
         y_highres = np.asarray(y_base * t_seg, dtype=float)
         y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
-
-        if flux == "flam":
-            y_final = fnu_to_flam(w, y_final)
-
         # Output units
         u = (unit or "A").strip().lower()
         if u in ("nm", "nanometer", "nanometers"):
@@ -780,8 +787,8 @@ def segment_txt(
             w_out = w
             unit_label = "A"
 
-        col = "y_final_cgs" if plot_cgs else "y_final_norm"
-        lines = [f"# wavelength[{unit_label}]\t{col}"]
+        col = ("y_final_flam" if flux == "flam" else "y_final_cgs") if plot_cgs else "y_final_norm"
+        lines = [f"# wavelength[{unit_label}]   {col}"]
         lines += [f"{ww:.6f}\t{yy:.8f}" for ww, yy in zip(w_out, y_final)]
         return PlainTextResponse("\n".join(lines) + "\n", status_code=200)
 
