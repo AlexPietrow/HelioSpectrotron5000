@@ -25,16 +25,26 @@
     .title{font-size:18px;font-weight:700;}
     .subtitle{font-size:12px;color:var(--muted);margin-top:4px;}
     .btnbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+
+    /* base controls */
     button{
       background:var(--btn);color:var(--text);
       border:1px solid var(--border);
       border-radius:12px;padding:10px 12px;font-size:14px;
       cursor:pointer;
+      transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+      height:40px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      user-select:none;
+      white-space:nowrap;
     }
     button:hover{background:var(--btnHover);}
+    button:active{transform:translateY(1px);}
     button.active{background:var(--btnActive);color:var(--btnActiveText);border-color:var(--btnActive);}
-    .group{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-    .label{font-size:12px;color:var(--muted);margin-right:4px;}
+
     input{
       background:#ffffff;color:var(--text);
       border:1px solid var(--border);
@@ -43,10 +53,22 @@
       font-size:14px;
       width:140px;
       box-sizing:border-box;
+      height:40px;
     }
     input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.15);}
     .smallInput{width:120px;}
     .tinyInput{width:100px;}
+
+    .group{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .label{
+      font-size:11px;
+      color:var(--muted);
+      margin-right:4px;
+      text-transform:uppercase;
+      letter-spacing:0.04em;
+      white-space:nowrap;
+    }
+
     .imgwrap{margin-top:14px;}
     #img{
       width:100%;
@@ -68,6 +90,13 @@
       gap:10px;
       flex-wrap:wrap;
     }
+
+    /* Center all items inside a controls row */
+    .controlsRow.centerRow{
+      justify-content: center;   /* horizontal centering */
+    }
+
+
     .pill{
       border:1px solid var(--border);
       background:#fff;
@@ -78,16 +107,101 @@
       color:var(--text);
     }
     .divider{height:10px;}
-  
-    /* --- acknowledgments button + modal --- */
-    #btnAck{
+
+    /* --- prettier grouped controls (bracket via fieldset/legend) --- */
+    .controlsRow{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-start;
+      justify-content:center;
+      width:100%;
+    }
+    fieldset.field{
+      border:1px solid var(--border);
+      background:#fff;
+      border-radius:14px;
+      padding:10px 10px 12px;
+      margin:0;
+    }
+    fieldset.field legend{
+      padding:0 8px;
+      font-size:12px;
+      color:var(--muted);
+      letter-spacing:0.02em;
+    }
+
+    /* Center content in a fieldset without making it full-page width */
+    fieldset.field.centerContent{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+    }
+    .centerIsland{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      justify-content:center;
+      margin-top:6px;
+    }
+
+    /* segmented controls */
+    .seg{
+      display:inline-flex;
+      border:1px solid var(--border);
+      border-radius:12px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .seg button{
+      border:0;
+      border-right:1px solid var(--border);
+      border-radius:0;
+      background:#fff;
+    }
+    .seg button:hover{background:var(--btnHover);}
+    .seg button:last-child{border-right:0;}
+    .seg button.active{
+      background:var(--btnActive);
+      color:var(--btnActiveText);
+    }
+    /* Jump-to row: one-line, small buttons */
+    .jumpRow{
+      display:flex;
+      gap:6px;
+      justify-content:center;
+      align-items:center;
+      justify-content:center;
+      flex-wrap:nowrap;
+      overflow-x:auto;
+      padding-bottom:2px;
+      -webkit-overflow-scrolling:touch;
+    }
+    .jumpRow::-webkit-scrollbar{height:8px;}
+    .jumpRow::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:999px;}
+    .jumpRow button{
+      height:30px;
+      padding:6px 8px;
+      font-size:12px;
+      border-radius:10px;
+    }
+
+    /* --- feedback + acknowledgments buttons --- */
+    #btnFeedback, #btnAck{
       position:fixed;
-      bottom:12px;
       right:12px;
       z-index:9000;
       font-size:13px;
       padding:8px 12px;
+      height:auto;
+      border-radius:12px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      background:#fff;
     }
+    #btnAck{ bottom:12px; }
+    #btnFeedback{ bottom:56px; } /* sits above acknowledgments */
+
+    /* --- acknowledgments modal --- */
     #ackModal{
       position:fixed;
       inset:0;
@@ -120,7 +234,6 @@
     }
     #ackBody a{color:var(--accent);text-decoration:none;}
     #ackBody a:hover{text-decoration:underline;}
-
   </style>
 </head>
 <body>
@@ -133,78 +246,133 @@
         <div class="title">HelioSpectrotron 5000</div>
         <div class="subtitle">Solar atlas with telurics and optional resolution degradation.</div>
       </div>
-
-      <!-- Row 1 buttons -->
-      <div class="btnbar">
-        <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
-        <button id="btnLegend" title="Toggle legend">Legend</button>
-        <button id="btnUnit" title="Toggle plotting unit">Å</button>
-        <button id="btnDownload" title="Download current PNG">Download PNG</button>
-        <button id="btnData" title="Show/copy wavelength + convolved spectrum" aria-label="Copy data">📋</button>
-      </div>
     </div>
 
     <div class="divider"></div>
 
     <!-- Row 2 -->
-    <div class="row">
-      <div class="rowBlock">
-        <div class="group">
-          <span class="label">Central wavelength (<span id="unitTextC">Å</span>)</span>
+    <div class="controlsRow">
+
+      <fieldset class="field">
+        <legend>Central wavelength (<span id="unitTextC">Å</span>)</legend>
+        <div class="group centerIsland">
           <input id="centerInput" class="smallInput" type="number" step="0.001" />
+          <span class="label">(<span id="unitTextW">Å</span>)</span>
           <button id="btnCenterGo" title="Center window and plot">Go</button>
         </div>
+        <div class="subtitle" style="margin-top:6px;">Center window around given wavelength</div>
+      </fieldset>
 
+      <fieldset class="field">
+        <legend>Window Size</legend>
         <div class="group">
-          <span class="label">Window</span>
-          <button id="btnWin1" class="active" title="×1 window">×1</button>
-          <button id="btnWin2" title="×2 window">×2</button>
-          <button id="btnWin5" title="×5 window">×5</button>
+          <div class="seg">
+            <button id="btnWin1" class="active" title="×1 window">×1</button>
+            <button id="btnWin2" title="×2 window">×2</button>
+            <button id="btnWin5" title="×5 window">×5</button>
+          </div>
           <input id="windowInput" class="tinyInput" type="number" step="0.001" />
           <span class="label">(<span id="unitTextW">Å</span>)</span>
         </div>
+        <div class="subtitle" style="margin-top:6px;">Moddify window size</div>
+      </fieldset>
 
+      <fieldset class="field">
+        <legend>Window Step</legend>
         <div class="group">
           <span class="label">Step size</span>
-          <button id="btnStepLeft" title="Move left by step">&lt;</button>
-          <button id="btnStepRight" title="Move right by step">&gt;</button>
           <input id="stepInput" class="tinyInput" type="number" step="0.001" />
           <span class="label">(<span id="unitTextS">Å</span>)</span>
+          <div class="seg">
+            <button id="btnStepLeft" title="Move left by step">&lt;</button>
+            <button id="btnStepRight" title="Move right by step">&gt;</button>
+          </div>
         </div>
-      </div>
+        <div class="subtitle" style="margin-top:6px;">Navigate Spectrum</div>
+      </fieldset>
+
+            <fieldset class="field" style="min-width:auto;">
+        <legend>Display</legend>
+        <div class="seg">
+          <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
+          <button id="btnLegend" title="Toggle legend">Legend</button>
+          <button id="btnUnit" title="Toggle plotting unit">Å</button>
+
+        </div>
+        <div class="subtitle" style="margin-top:6px;">Display Options</div>
+      </fieldset>
+
+
+
+
+
     </div>
 
     <div class="divider"></div>
 
     <!-- Row 3 -->
-    <div class="row">
-      <div class="rowBlock">
-        <div class="group">
-          <span class="label">Resolution</span>
-          <button id="btnR20"  title="R=20,000">20k</button>
-          <button id="btnR40"  title="R=40,000">40k</button>
-          <button id="btnR100" title="R=100,000">100k</button>
-          <button id="btnR200" title="R=200,000">200k</button>
-          <button id="btnRinf" class="active" title="No degradation (∞)">∞</button>
-          <input id="r500Input" class="smallInput" type="number" step="1" />
-          <span class="label">(R@500nm; blank = ∞)</span>
-        </div>
+    <div class="controlsRow">
 
-        <div class="group">
-          <span class="label">Altitude</span>
-          <button id="btnAlt0" title="Sea level (0 m)">Sea level</button>
-          <button id="btnAlt2500" class="active" title="2500 m">2500 m</button>
+      <fieldset class="field">
+        <legend>Resolution (R@500nm)</legend>
+        <div class="group" style="flex-wrap:wrap;">
+          <div class="seg">
+            <button id="btnR20"  title="R=20,000">20k</button>
+            <button id="btnR40"  title="R=40,000">40k</button>
+            <button id="btnR100" title="R=100,000">100k</button>
+            <button id="btnR200" title="R=200,000">200k</button>
+            <button id="btnRinf" class="active" title="No degradation (∞)">∞</button>
+          </div>
+          <input id="r500Input" class="smallInput" type="number" step="1" />
+          
         </div>
+        <div class="subtitle" style="margin-top:6px;">Change spectral resolution</div>
+      </fieldset>
+
+<fieldset class="field ">
+  <legend>Telurics</legend>
+
+  <div class="group" style="flex-wrap:wrap;">
+    <div class="seg">
+      <button id="btnAlt0">Sea level</button>
+      <button id="btnAlt2500" class="active">2500 m</button>
       </div>
+      <button id="btnTellurics" class="active" title="Toggle telluric transmission overlay">On</button>
+    
+  </div>
+
+  <div class="subtitle" style="margin-top:6px;">Change altitude</div>
+</fieldset>
+
+      <fieldset class="field" style="min-width:auto;">
+        <legend>Flux</legend>
+        <div class="seg">
+          <button id="btnFluxNorm" class="active" title="Continuum-normalized spectrum">Normalized</button>
+          <button id="btnFluxCgs" title="Absolute intensity (cgs; Fν)">Fν</button>
+          <button id="btnFluxFlam" title="Absolute intensity (cgs; Fλ)">Fλ</button>
+        </div>
+        <div class="subtitle" style="margin-top:6px;">Units for Flux.</div>
+      </fieldset>
+
+
+      <fieldset class="field" style="min-width:auto;">
+        <legend>Export</legend>
+        <div class="group">
+          <button id="btnDownload" title="Download current PNG">PNG</button>
+          <button id="btnData" title="Show/copy wavelength + convolved spectrum" aria-label="Copy data">CSV</button>
+        </div>
+        <div class="subtitle" style="margin-top:6px;">Save window</div>
+      </fieldset>
+
     </div>
 
     <div class="divider"></div>
 
-    <!-- Row 4: Interesting lines -->
-    <div class="row">
-      <div class="rowBlock">
-        <div class="group">
-          <span class="label">Jump to</span>
+    <!-- Row 4: Jump to -->
+    <div class="controlsRow">
+      <fieldset class="field" style="width:100%;">
+        <legend>Jump to</legend>
+        <div class="jumpRow">
           <button id="btnCaK"></button>
           <button id="btnCaH"></button>
           <button id="btnHbeta"></button>
@@ -218,7 +386,7 @@
           <button id="btnCaIIIR"></button>
           <button id="btnHe10830"></button>
         </div>
-      </div>
+      </fieldset>
     </div>
 
     <div class="imgwrap">
@@ -233,10 +401,28 @@
   </div>
 </div>
 
-<!-- Acknowledgments -->
+<!-- Feedback + Acknowledgments -->
+<button id="btnFeedback" title="Feedback">Feedback</button>
 <button id="btnAck" title="Acknowledgments">Acknowledgments</button>
 
-<!-- Modal -->
+<!-- Feedback Modal (simple) -->
+<div id="fbModal" style="
+  position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.35); z-index:9999; padding:18px;">
+  <div style="
+    width:min(720px, 100%); background:#fff; border:1px solid #d1d5db; border-radius:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #d1d5db;">
+      <div style="font-weight:700;">Feedback</div>
+      <button id="btnCloseFb" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
+    </div>
+    <div style="padding:12px 14px; font-size:14px; line-height:1.45;">
+      Please email <a href="mailto:apietrow@aip.de" style="color:#2563eb; text-decoration:none;">apietrow@aip.de</a> with feedback.
+    </div>
+  </div>
+</div>
+
+<!-- Data Modal -->
 <div id="modal" style="
   position:fixed; inset:0; display:none; align-items:center; justify-content:center;
   background:rgba(0,0,0,0.35); z-index:9999; padding:18px;">
@@ -246,8 +432,8 @@
     <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #d1d5db;">
       <div style="font-weight:700;">Wavelength + convolved spectrum (TSV)</div>
       <div style="display:flex; gap:10px; align-items:center;">
-        <button id="btnCopyData" style="padding:8px 10px; border-radius:10px;">Copy</button>
-        <button id="btnCloseModal" style="padding:8px 10px; border-radius:10px;">Close</button>
+        <button id="btnCopyData" style="padding:8px 10px; border-radius:10px; height:36px;">Copy</button>
+        <button id="btnCloseModal" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
       </div>
     </div>
     <div style="padding:12px 14px;">
@@ -259,14 +445,13 @@
   </div>
 </div>
 
-
 <!-- Acknowledgments Modal -->
 <div id="ackModal">
   <div id="ackCard">
     <div id="ackHead">
       <div style="font-weight:700;">Acknowledgments</div>
       <div style="display:flex; gap:10px; align-items:center;">
-        <button id="btnCloseAck" style="padding:8px 10px; border-radius:10px;">Close</button>
+        <button id="btnCloseAck" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
       </div>
     </div>
     <div id="ackBody">
@@ -300,10 +485,11 @@
   </div>
 </div>
 
-
 <script>
 (() => {
-  // Backend-provided defaults (Å)
+    function el(id) { return document.getElementById(id); }
+
+// Backend-provided defaults (Å)
   const WMIN_A  = parseFloat("__WMIN__");
   const WMAX_A  = parseFloat("__WMAX__");
   const DEF_W_A = parseFloat("__WIDTH__");
@@ -312,9 +498,11 @@
 
   // Internal state ALWAYS Å
   let centerA = 6562.800;      // Hα default
-  let windowBaseA = DEF_W_A;   // base window value (Å)
-  let windowMult = 1;          // ×1, ×2, ×5
   let stepA = DEF_S_A;         // step size (Å)
+  let tellurics = 1;   // 1 = plotted, 0 = hidden
+  // Window: store the ACTUAL displayed base window in Å (already includes multiplier)
+  let windowA = DEF_W_A;       // (Å) actual window value shown in input
+  let windowMult = 1;          // ×1, ×2, ×5 (UI only; applied by updating windowA)
 
   let startA = WMIN_A;
   let widthA = DEF_W_A;
@@ -326,12 +514,15 @@
   let legendOn = false;
   let firstLoadLegend = true;  // show legend once on first successful render
   let unit = "A";              // "A" or "nm" (display only)
+  let flux = "norm";          // "norm" (normalized), "cgs" (Fν), or "flam" (Fλ)
 
-  const el = (id) => document.getElementById(id);
 
   const btnLabels = el("btnLabels");
   const btnLegend = el("btnLegend");
   const btnUnit   = el("btnUnit");
+  const btnFluxNorm = el("btnFluxNorm");
+  const btnFluxCgs  = el("btnFluxCgs");
+  const btnFluxFlam = el("btnFluxFlam");
   const btnDownload = el("btnDownload");
   const btnData     = el("btnData");
 
@@ -357,14 +548,14 @@
   const btnAlt0 = el("btnAlt0");
   const btnAlt2500 = el("btnAlt2500");
 
-  // Jump-to-line buttons (sorted by wavelength)
+  const btnTellurics = el("btnTellurics");
+  // Jump-to-line buttons
   const btnCaK     = el("btnCaK");
   const btnCaH     = el("btnCaH");
   const btnHbeta   = el("btnHbeta");
   const btnMgB1    = el("btnMgB1");
   const btnHeD3    = el("btnHeD3");
   const btnNaD1    = el("btnNaD1");
-  const btnCaI6163 = el("btnCaI6163");
   const btnFe6173  = el("btnFe6173");
   const btnFe6302  = el("btnFe6302");
   const btnHalpha  = el("btnHalpha");
@@ -381,7 +572,7 @@
   const hoverPill = el("hoverPill");
   const rangePill = el("rangePill");
 
-  // modal
+  // data modal
   const modal = el("modal");
   const btnCloseModal = el("btnCloseModal");
   const btnCopyData   = el("btnCopyData");
@@ -393,31 +584,35 @@
   const ackModal    = el("ackModal");
   const btnCloseAck = el("btnCloseAck");
 
+  // feedback
+  const btnFeedback = el("btnFeedback");
+  const fbModal     = el("fbModal");
+  const btnCloseFb  = el("btnCloseFb");
+
   function openAck(){ ackModal.style.display = "flex"; }
   function closeAck(){ ackModal.style.display = "none"; }
-
+  function openFb(){ fbModal.style.display = "flex"; }
+  function closeFb(){ fbModal.style.display = "none"; }
 
   // Line definitions in Å (used for jump + label/title formatting)
-const LINE_DEFS = [
-  { el: btnCaK,     name: "Ca II K",  lamA: 3933.660, showLam: false },
-  { el: btnCaH,     name: "Ca II H",  lamA: 3968.470, showLam: false },
-  { el: btnHbeta,   name: "Hβ",       lamA: 4861.330, showLam: false },
-  { el: btnMgB1,    name: "Mg b1",    lamA: 5183.604, showLam: false },
-  { el: btnHeD3,    name: "He D3",    lamA: 5875.620, showLam: false },
-  { el: btnNaD1,    name: "Na D1",    lamA: 5895.924, showLam: false },
+  const LINE_DEFS = [
+    { el: btnCaK,     name: "Ca II K",  lamA: 3933.660, showLam: false },
+    { el: btnCaH,     name: "Ca II H",  lamA: 3968.470, showLam: false },
+    { el: btnHbeta,   name: "Hβ",       lamA: 4861.330, showLam: false },
+    { el: btnMgB1,    name: "Mg b1",    lamA: 5183.604, showLam: false },
+    { el: btnHeD3,    name: "He D3",    lamA: 5875.620, showLam: false },
+    { el: btnNaD1,    name: "Na D1",    lamA: 5895.924, showLam: false },
 
-  // Only these show wavelength in the *button label*
-  { el: btnFe6173,  name: "Fe I",     lamA: 6173.334, showLam: true,  lamLabelA: 6173.0 },
-  { el: btnFe6302,  name: "Fe I",     lamA: 6302.493, showLam: true,  lamLabelA: 6302.0 },
+    { el: btnFe6173,  name: "Fe I",     lamA: 6173.334, showLam: true,  lamLabelA: 6173.0 },
+    { el: btnFe6302,  name: "Fe I",     lamA: 6302.493, showLam: true,  lamLabelA: 6302.0 },
 
-  { el: btnHalpha,  name: "Hα",       lamA: 6562.800, showLam: false },
+    { el: btnHalpha,  name: "Hα",       lamA: 6562.800, showLam: false },
 
-  { el: btnKI7699,  name: "K I",      lamA: 7698.964, showLam: true,  lamLabelA: 7699.0 },
+    { el: btnKI7699,  name: "K I",      lamA: 7698.964, showLam: true,  lamLabelA: 7699.0 },
 
-  { el: btnCaIIIR,  name: "Ca II IR", lamA: 8542.090, showLam: false },
-  { el: btnHe10830, name: "He I", lamA: 10830.340, showLam: true },
-];
-
+    { el: btnCaIIIR,  name: "Ca II IR", lamA: 8542.090, showLam: false },
+    { el: btnHe10830, name: "He I",     lamA: 10830.340, showLam: true },
+  ];
 
   function factorToA() { return (unit === "nm") ? 10.0 : 1.0; }   // displayed -> Å
   function factorFromA(){ return (unit === "nm") ? 0.1 : 1.0; }   // Å -> displayed
@@ -432,16 +627,32 @@ const LINE_DEFS = [
   function closeModal(){ modal.style.display = "none"; }
 
   function setWindowMultiplier(m){
+    // Multiply the currently displayed window by (m / currentMult)
+    const ratio = m / windowMult;
+    windowA = windowA * ratio;
     windowMult = m;
+
     btnWin1.classList.toggle("active", m === 1);
     btnWin2.classList.toggle("active", m === 2);
     btnWin5.classList.toggle("active", m === 5);
+
     recalcWindowFromCenter();
+  }
+
+  function clearWindowButtonsTo1x(){
+    windowMult = 1;
+    btnWin1.classList.add("active");
+    btnWin2.classList.remove("active");
+    btnWin5.classList.remove("active");
   }
 
   function setResolutionButtonActive(which){
     [btnR20,btnR40,btnR100,btnR200,btnRinf].forEach(b => b.classList.remove("active"));
     which.classList.add("active");
+  }
+
+  function clearResolutionButtons(){
+    [btnR20,btnR40,btnR100,btnR200,btnRinf].forEach(b => b.classList.remove("active"));
   }
 
   function setAltitude(a){
@@ -451,7 +662,7 @@ const LINE_DEFS = [
   }
 
   function recalcWindowFromCenter(){
-    widthA = Math.max(0.1, windowBaseA * windowMult);
+    widthA = Math.max(0.1, windowA);
     startA = centerA - 0.5 * widthA;
 
     if (startA < WMIN_A) startA = WMIN_A;
@@ -460,58 +671,52 @@ const LINE_DEFS = [
     widthA = clamp(widthA, 0.1, (WMAX_A - startA));
   }
 
-  function formatLamForButton(lamA){
-    if (unit === "nm"){
-      const v = lamA / 10.0;
-      return `${v.toFixed(3)} nm`;
-    }
-    return `${lamA.toFixed(1)} Å`;
+  function formatLamForTitle(lamA){
+    if (unit === "nm") return `${(lamA/10.0).toFixed(4)} nm`;
+    return `${lamA.toFixed(3)} Å`;
   }
 
-function formatLamForTitle(lamA){
-  if (unit === "nm") return `${(lamA/10.0).toFixed(4)} nm`;
-  return `${lamA.toFixed(3)} Å`;
-}
+  function formatLamForLabel(lamA){
+    if (unit === "nm") return `${Math.round(lamA / 10.0)} nm`;
+    return `${Math.round(lamA)} Å`;
+  }
 
-function formatLamForLabel(lamA){
-  // integer display, unit-aware
-  if (unit === "nm") return `${Math.round(lamA / 10.0)} nm`;
-  return `${Math.round(lamA)} Å`;
-}
+  function updateLineButtons(){
+    for (const d of LINE_DEFS){
+      const lamTitle = formatLamForTitle(d.lamA);
+      d.el.title = `${d.name} ${lamTitle}`;
 
-
-function updateLineButtons(){
-  for (const d of LINE_DEFS){
-    const lamTitle = formatLamForTitle(d.lamA);
-
-    // tooltip always shows wavelength (unit-aware)
-    d.el.title = `${d.name} ${lamTitle}`;
-
-    // label only shows wavelength if requested
-    if (d.showLam){
-      const lamLabelA = (typeof d.lamLabelA === "number") ? d.lamLabelA : d.lamA;
-      d.el.textContent = `${d.name} ${formatLamForLabel(lamLabelA)}`;
-    } else {
-      d.el.textContent = d.name;
+      if (d.showLam){
+        const lamLabelA = (typeof d.lamLabelA === "number") ? d.lamLabelA : d.lamA;
+        d.el.textContent = `${d.name} ${formatLamForLabel(lamLabelA)}`;
+      } else {
+        d.el.textContent = d.name;
+      }
     }
   }
-}
-
 
   function syncUIFromState(){
     const f = factorFromA();
 
-    centerInput.value = fmt3(centerA * f);
-    windowInput.value = fmt3(windowBaseA * f);
-    stepInput.value   = fmt3(stepA * f);
 
-    // R input: blank means ∞
+    // Tellurics button (On/Off)
+    btnTellurics.textContent = tellurics ? "On" : "Off";
+    btnTellurics.classList.toggle("active", tellurics === 1);
+    btnTellurics.setAttribute("aria-pressed", tellurics ? "true" : "false");
+    centerInput.value = fmt3(centerA * f);
+    windowInput.value = fmt3(windowA * f);
+    stepInput.value   = fmt3(stepA * f);
     r500Input.value = (r500 >= 1e8) ? "" : String(Math.round(r500));
 
-    btnUnit.textContent = (unit === "nm") ? "Å" : "nm";  // show target unit
-    btnUnit.classList.add("active");                     // always looks pressed
+    // flipped label (shows target unit), and looks pressed
+    btnUnit.textContent = (unit === "nm") ? "Å" : "nm";
+    btnUnit.classList.add("active");
     btnUnit.setAttribute("aria-pressed", "true");
 
+    // flux buttons
+    btnFluxNorm.classList.toggle("active", flux === "norm");
+    btnFluxCgs.classList.toggle("active", flux === "cgs");
+    btnFluxFlam.classList.toggle("active", flux === "flam");
 
     unitTextC.textContent = (unit === "nm") ? "nm" : "Å";
     unitTextW.textContent = (unit === "nm") ? "nm" : "Å";
@@ -533,10 +738,10 @@ function updateLineButtons(){
     const r = parseFloat(r500Input.value);
 
     if (isFinite(c)) centerA = c * toA;
-    if (isFinite(w)) windowBaseA = w * toA;
+    if (isFinite(w)) windowA = w * toA;
     if (isFinite(st)) stepA = st * toA;
 
-    windowBaseA = clamp(windowBaseA, 0.1, (WMAX_A - WMIN_A));
+    windowA = clamp(windowA, 0.1, (WMAX_A - WMIN_A));
     stepA = clamp(stepA, 0.001, (WMAX_A - WMIN_A));
 
     r500 = (isFinite(r) && r > 0) ? r : 1e12;
@@ -554,7 +759,9 @@ function updateLineButtons(){
     u.searchParams.set("alt",    String(alt));
     u.searchParams.set("labels", labelsOn ? "1" : "0");
     u.searchParams.set("legend", legendParam ? "1" : "0");
+    u.searchParams.set("tellurics", tellurics);
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+    u.searchParams.set("flux",   flux);
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
@@ -566,6 +773,7 @@ function updateLineButtons(){
     u.searchParams.set("R500",   r500.toFixed(6));
     u.searchParams.set("alt",    String(alt));
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+    u.searchParams.set("flux",   flux);
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
@@ -581,7 +789,7 @@ function updateLineButtons(){
       `center=${(centerA*f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}  ` +
       `start=${(startA*f).toFixed(3)}  end=${(endA*f).toFixed(3)}  ` +
       `width=${(widthA*f).toFixed(3)}  step=${(stepA*f).toFixed(3)}\n` +
-      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  ` +
+      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  flux=${flux}  ` +
       `labels=${labelsOn?1:0}  legend=${(firstLoadLegend||legendOn)?1:0}`;
 
     const url = buildUrl();
@@ -607,7 +815,6 @@ function updateLineButtons(){
     img.src = url;
   }
 
-  // Jump helper
   function gotoLine_A(lamA){
     centerA = clamp(lamA, WMIN_A, WMAX_A);
     recalcWindowFromCenter();
@@ -631,15 +838,26 @@ function updateLineButtons(){
   img.addEventListener("mousemove", updateHover);
   img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
 
-  // ---- row 1 ----
-  btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; render(); });
-  btnLegend.addEventListener("click", () => { legendOn = !legendOn; render(); });
+  // ---- display ----
+  btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; btnLabels.classList.toggle("active", labelsOn); render(); });
+  btnLegend.addEventListener("click", () => { legendOn = !legendOn; btnLegend.classList.toggle("active", legendOn); render(); });
   btnUnit.addEventListener("click", () => {
     unit = (unit === "nm") ? "A" : "nm";
     syncUIFromState();
     render();
   });
 
+  // Flux mode
+  btnFluxNorm.addEventListener("click", () => { flux = "norm"; render(); });
+  btnFluxCgs.addEventListener("click",  () => { flux = "cgs";  render(); });
+  btnFluxFlam.addEventListener("click", () => { flux = "flam"; render(); });
+
+  // Tellurics (plot overlay)
+  btnTellurics.addEventListener("click", () => {
+    tellurics = tellurics ? 0 : 1;
+    syncUIFromState();
+    render();
+  });
 
   // Download current PNG
   btnDownload.addEventListener("click", async () => {
@@ -703,6 +921,10 @@ function updateLineButtons(){
   btnCloseAck.addEventListener("click", () => closeAck());
   ackModal.addEventListener("click", (ev) => { if (ev.target === ackModal) closeAck(); });
 
+  // Feedback modal
+  btnFeedback.addEventListener("click", () => openFb());
+  btnCloseFb.addEventListener("click", () => closeFb());
+  fbModal.addEventListener("click", (ev) => { if (ev.target === fbModal) closeFb(); });
 
   btnCopyData.addEventListener("click", async () => {
     try {
@@ -716,9 +938,13 @@ function updateLineButtons(){
   // ---- row 2 ----
   btnCenterGo.addEventListener("click", () => render());
 
-  btnWin1.addEventListener("click", () => { setWindowMultiplier(1); render(); });
-  btnWin2.addEventListener("click", () => { setWindowMultiplier(2); render(); });
-  btnWin5.addEventListener("click", () => { setWindowMultiplier(5); render(); });
+  // window multiplier buttons now scale the windowInput value
+  btnWin1.addEventListener("click", () => { setWindowMultiplier(1); syncUIFromState(); render(); });
+  btnWin2.addEventListener("click", () => { setWindowMultiplier(2); syncUIFromState(); render(); });
+  btnWin5.addEventListener("click", () => { setWindowMultiplier(5); syncUIFromState(); render(); });
+
+  // typing a new window value resets to ×1
+  windowInput.addEventListener("input", () => { clearWindowButtonsTo1x(); });
 
   btnStepLeft.addEventListener("click", () => {
     readUIToState();
@@ -736,12 +962,7 @@ function updateLineButtons(){
     render();
   });
 
-  // Enter triggers render
-  [centerInput, windowInput, stepInput, r500Input].forEach((x) => {
-    x.addEventListener("keydown", (ev) => { if (ev.key === "Enter") render(); });
-  });
-
-  // ---- row 3 resolution (write into r500Input so readUIToState doesn't overwrite) ----
+  // ---- row 3 resolution ----
   btnR20.addEventListener("click", () => {
     r500Input.value = "20000"; r500 = 20000;
     setResolutionButtonActive(btnR20);
@@ -768,9 +989,17 @@ function updateLineButtons(){
     render();
   });
 
+  // typing a new resolution clears preset buttons
+  r500Input.addEventListener("input", () => { clearResolutionButtons(); });
+
   // Altitude buttons
   btnAlt0.addEventListener("click", () => { setAltitude(0); render(); });
   btnAlt2500.addEventListener("click", () => { setAltitude(2500); render(); });
+
+  // Enter triggers render
+  [centerInput, windowInput, stepInput, r500Input].forEach((x) => {
+    x.addEventListener("keydown", (ev) => { if (ev.key === "Enter") render(); });
+  });
 
   // ---- row 4 jump buttons ----
   btnCaK.addEventListener("click",     () => gotoLine_A(3933.660));
@@ -787,15 +1016,24 @@ function updateLineButtons(){
   btnHe10830.addEventListener("click", () => gotoLine_A(10830.340));
 
   // ---- init ----
-  centerA = clamp(centerA, WMIN_A, WMAX_A);
-  windowBaseA = DEF_W_A;
-  stepA = DEF_S_A;
-  setWindowMultiplier(1);
+  function clampState(){
+    centerA = clamp(centerA, WMIN_A, WMAX_A);
+    windowA = clamp(windowA, 0.1, (WMAX_A - WMIN_A));
+    stepA   = clamp(stepA,   0.001, (WMAX_A - WMIN_A));
+    recalcWindowFromCenter();
+  }
+
+  centerA = 6562.800;
+  windowA = DEF_W_A;   // shown value
+  stepA   = DEF_S_A;
+
+  clearWindowButtonsTo1x();
   setAltitude(2500);
 
   r500 = DEF_R;
   setResolutionButtonActive(btnRinf);
 
+  clampState();
   syncUIFromState();
   render();
 })();
