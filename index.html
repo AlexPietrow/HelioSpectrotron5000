@@ -324,6 +324,7 @@
             <button id="btnRinf" class="active" title="No degradation (∞)">∞</button>
           </div>
           <input id="r500Input" class="smallInput" type="number" step="1" />
+          <button id="btnRefInf" title="Toggle overlay of unconvolved reference (R=∞) spectrum">REF∞</button>
           
         </div>
         <div class="subtitle" style="margin-top:6px;">Change spectral resolution</div>
@@ -500,6 +501,7 @@
   let centerA = 6562.800;      // Hα default
   let stepA = DEF_S_A;         // step size (Å)
   let tellurics = 1;   // 1 = plotted, 0 = hidden
+  let refinf = 0;      // 1 = overlay REF∞ (unconvolved), 0 = off
   // Window: store the ACTUAL displayed base window in Å (already includes multiplier)
   let windowA = DEF_W_A;       // (Å) actual window value shown in input
   let windowMult = 1;          // ×1, ×2, ×5 (UI only; applied by updating windowA)
@@ -549,6 +551,7 @@
   const btnAlt2500 = el("btnAlt2500");
 
   const btnTellurics = el("btnTellurics");
+  const btnRefInf   = el("btnRefInf");
   // Jump-to-line buttons
   const btnCaK     = el("btnCaK");
   const btnCaH     = el("btnCaH");
@@ -703,6 +706,11 @@
     btnTellurics.textContent = tellurics ? "On" : "Off";
     btnTellurics.classList.toggle("active", tellurics === 1);
     btnTellurics.setAttribute("aria-pressed", tellurics ? "true" : "false");
+
+    // REF∞ overlay button
+    btnRefInf.textContent = refinf ? "REF∞" : "REF∞";
+    btnRefInf.classList.toggle("active", refinf === 1);
+    btnRefInf.setAttribute("aria-pressed", refinf ? "true" : "false");
     centerInput.value = fmt3(centerA * f);
     windowInput.value = fmt3(windowA * f);
     stepInput.value   = fmt3(stepA * f);
@@ -760,6 +768,7 @@
     u.searchParams.set("labels", labelsOn ? "1" : "0");
     u.searchParams.set("legend", legendParam ? "1" : "0");
     u.searchParams.set("tellurics", tellurics);
+    u.searchParams.set("refinf", refinf);
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
     u.searchParams.set("_", String(Date.now()));
@@ -822,23 +831,67 @@
     render();
   }
 
-  // ---- hover wavelength readout ----
+  // ---- hover wavelength + y readout (backend hover.json) ----
+  let hoverRAF = null;
+  let lastHoverDisp = null;
+
+  async function fetchHover(xDisp){
+    const u = new URL("hover.json", window.location.href);
+    u.searchParams.set("start",  startA.toFixed(6));
+    u.searchParams.set("width",  widthA.toFixed(6));
+    u.searchParams.set("R500",   r500.toFixed(6));
+    u.searchParams.set("alt",    String(alt));
+    u.searchParams.set("tellurics", String(tellurics));
+    u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+    u.searchParams.set("flux",   flux);
+    u.searchParams.set("x",      xDisp.toFixed(6));
+    u.searchParams.set("_", String(Date.now()));
+    const resp = await fetch(u.toString(), { cache: "no-store" });
+    return await resp.json();
+  }
+
   function updateHover(ev){
     const rect = img.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    if (x < 0 || x > rect.width) {
+    const xpx = ev.clientX - rect.left;
+
+    if (xpx < 0 || xpx > rect.width) {
       hoverPill.textContent = "hover: —";
       return;
     }
-    const frac = rect.width > 0 ? (x / rect.width) : 0;
+
+    const frac = rect.width > 0 ? (xpx / rect.width) : 0;
     const lamA = startA + frac * widthA;
     const lamDisp = lamA * factorFromA();
-    hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
+    lastHoverDisp = lamDisp;
+
+    // Immediate wavelength feedback
+    hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=…`;
+
+    if (hoverRAF) return;
+    hoverRAF = requestAnimationFrame(async () => {
+      hoverRAF = null;
+      try {
+        const js = await fetchHover(lastHoverDisp);
+        if (!js || !js.ok || js.y === null || !isFinite(js.y)) {
+          hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=—`;
+          return;
+        }
+
+        let yLabel = "y";
+        if (flux === "norm") yLabel = "I/Ic";
+        else if (flux === "cgs") yLabel = "Iν";
+        else if (flux === "flam") yLabel = "Iλ";
+
+        hoverPill.textContent =
+          `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  ${yLabel}=${Number(js.y).toPrecision(6)}`;
+      } catch (e) {
+        hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=ERR`;
+      }
+    });
   }
   img.addEventListener("mousemove", updateHover);
   img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
-
-  // ---- display ----
+// ---- display ----
   btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; btnLabels.classList.toggle("active", labelsOn); render(); });
   btnLegend.addEventListener("click", () => { legendOn = !legendOn; btnLegend.classList.toggle("active", legendOn); render(); });
   btnUnit.addEventListener("click", () => {
@@ -855,6 +908,13 @@
   // Tellurics (plot overlay)
   btnTellurics.addEventListener("click", () => {
     tellurics = tellurics ? 0 : 1;
+    syncUIFromState();
+    render();
+  });
+
+  // REF∞ overlay (unconvolved reference)
+  btnRefInf.addEventListener("click", () => {
+    refinf = refinf ? 0 : 1;
     syncUIFromState();
     render();
   });

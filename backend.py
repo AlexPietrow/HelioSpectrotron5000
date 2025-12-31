@@ -22,6 +22,7 @@ Controls (via query params):
 - labels=0/1     : line-name overlay
 - legend=0/1     : matplotlib legend
 - tellurics=0/1  : multiply by telluric transmission + plot tellurics overlay
+- refinf=0/1     : overlay the un-convolved reference spectrum (R=∞) on top of the convolved spectrum
 - unit=A/nm      : plotting unit only (selection in Å)
 - R500           : resolving power at 500 nm; uses FWHM_A = 5000 / R500
 
@@ -42,7 +43,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from fastapi import FastAPI, Response
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 
 # ----------------------------
 # CONFIG
@@ -413,6 +414,7 @@ def render_segment_png(
     labels_on: bool,
     legend_on: bool,
     tellurics_on: bool,
+    refinf_on: bool,
     unit: str,
     flux: str = "norm",
 ) -> bytes:
@@ -467,6 +469,7 @@ def render_segment_png(
     # final spectrum: (solar * telluric) convolved
     y_highres = np.asarray(y_base * t_seg, dtype=float)
     y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
+    y_ref = y_highres  # reference (R=∞) spectrum for optional overlay
     # tellurics for DISPLAY: convolve telluric transmission too
     t_disp = np.asarray(apply_resolution_R500(w, tint_for_display, R500), dtype=float)
 
@@ -481,6 +484,9 @@ def render_segment_png(
 
     if plot_cgs:
         # Spectrum (absolute units) — NEVER rescale values; only adjust ylim for headroom.
+        if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+            ax1.plot(w_plot, y_ref, color="black", lw=1.0, alpha=0.5, zorder=1,
+                     label="REF ∞" if legend_on else None)
         ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum" if legend_on else None)
 
         # Estimate continuum level (robust): high percentile of y_final within the window.
@@ -520,10 +526,14 @@ def render_segment_png(
         if legend_on:
             if tellurics_on:
                 ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics")
+            if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+                ax1.plot(w_plot, y_ref, color="black", lw=1.0, alpha=0.5, zorder=1, label="REF ∞")
             ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum")
         else:
             if tellurics_on:
                 ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3)
+            if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+                ax1.plot(w_plot, y_ref, color="black", lw=1.0, alpha=0.5, zorder=1)
             ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2)
 
         ax1.set_ylim(0, 1.20 if labels_on else 1.20)
@@ -685,6 +695,7 @@ def segment_png(
     labels: Optional[int] = 1,   # 0/1
     legend: Optional[int] = 0,   # 0/1
     tellurics: Optional[int] = 1,  # 0/1
+    refinf: Optional[int] = 0,     # 0/1  overlay REF ∞ (unconvolved)
     unit: Optional[str] = "A",   # 'A' or 'nm' (plotting only)
     flux: Optional[str] = "norm",  # 'norm' or 'cgs'
 ):
@@ -703,6 +714,7 @@ def segment_png(
         legend_on = bool(int(legend)) if legend is not None else False
 
         tellurics_on = bool(int(tellurics)) if tellurics is not None else True
+        refinf_on   = bool(int(refinf)) if refinf is not None else False
 
         png = render_segment_png(
             start, end,
@@ -711,6 +723,7 @@ def segment_png(
             labels_on=labels_on,
             legend_on=legend_on,
             tellurics_on=tellurics_on,
+            refinf_on=refinf_on,
             unit=unit,
             flux=flux,
         )
@@ -796,3 +809,99 @@ def segment_txt(
         tb = traceback.format_exc()
         print(tb, flush=True)
         return PlainTextResponse(tb, status_code=500)
+
+@app.get("/hover.json", response_class=JSONResponse)
+def hover_json(
+    start: float,
+    x: float,
+    width: Optional[float] = None,
+    R500: Optional[float] = None,
+    alt: Optional[int] = 2500,     # 0 or 2500 (meters)
+    tellurics: Optional[int] = 1,  # 0/1
+    unit: Optional[str] = "A",     # x unit: 'A' or 'nm' (same as plotting unit)
+    flux: Optional[str] = "norm",  # 'norm' or 'cgs' or 'flam'
+):
+    try:
+        start = float(start)
+        x = float(x)
+        width = float(width) if width is not None else DEFAULT_WIDTH_A
+        R500 = DEFAULT_R500 if (R500 is None) else float(R500)
+
+        # clamp segment
+        start = max(WMIN, min(start, WMAX - 0.1))
+        width = max(0.1, min(width, WMAX - start))
+        end = start + width
+
+        alt_m = int(alt) if int(alt) in (0, 2500) else 2500
+
+        # interpret x in requested unit and convert to Å for interpolation
+        u = (unit or "A").strip().lower()
+        if u in ("nm", "nanometer", "nanometers"):
+            x_A = x * 10.0
+            unit_label = "nm"
+        else:
+            x_A = x
+            unit_label = "A"
+
+        # data in Å
+        flux = (flux or "norm").strip().lower()
+        if flux == "norm":
+            w, y_base = fetch_ispy_air_norm(start, end)
+        elif flux == "cgs":
+            w, y_base = fetch_ispy_air_cgs_fnu(start, end)
+        elif flux == "flam":
+            w, y_base = fetch_ispy_air_cgs_flam(start, end)
+        else:
+            w, y_base = fetch_ispy_air_norm(start, end)
+
+        if w.size == 0:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "reason": "empty slice",
+                    "unit": unit_label,
+                    "x": x,
+                    "y": None,
+                },
+                status_code=200,
+            )
+
+        twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
+        t_seg = np.interp(w, twav, tint)
+
+        tellurics_on = bool(int(tellurics)) if tellurics is not None else True
+        if not tellurics_on:
+            t_seg = np.ones_like(t_seg)
+
+        # Physically correct final spectrum
+        y_highres = np.asarray(y_base * t_seg, dtype=float)
+        y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
+
+        if not (w[0] <= x_A <= w[-1]):
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "unit": unit_label,
+                    "x": x,
+                    "y": None,
+                    "note": "x out of slice",
+                },
+                status_code=200,
+            )
+
+        y = float(np.interp(x_A, w, y_final))
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "unit": unit_label,
+                "x": x,
+                "y": y,
+            },
+            status_code=200,
+        )
+
+    except Exception:
+        tb = traceback.format_exc()
+        print(tb, flush=True)
+        return JSONResponse({"ok": False, "error": tb}, status_code=500)
