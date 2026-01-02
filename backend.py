@@ -79,8 +79,8 @@ TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
 # Line lists (FILES IN REPO ROOT)
-OLD_LINE_CSV = os.path.join(HERE, "moore_binned_0p5A.csv")
-NEW_LINE_CSV = os.path.join(HERE, "babcock_binned_0p5A.csv")
+OLD_LINE_CSV = os.path.join(HERE, "moore_clean02012026.csv")
+NEW_LINE_CSV = os.path.join(HERE, "babcock_clean_02012026.csv")
 
 
 # ----------------------------
