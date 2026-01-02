@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Solar Spectral Atlas</title>
+  <title>SpectroHeliotron 5000</title>
   <style>
     :root{
       --bg:#ffffff;
@@ -17,6 +17,18 @@
       --btnActiveText:#ffffff;
       --accent:#2563eb;
     }
+:root[data-theme="dark"]{
+  --bg:#0b1220;
+  --panel:#111827;
+  --text:#e5e7eb;
+  --muted:#9ca3af;
+  --border:#334155;
+  --btn:#0f172a;
+  --btnHover:#111c33;
+  --btnActive:#e5e7eb;
+  --btnActiveText:#111827;
+  --accent:#60a5fa;
+}
     html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
     .wrap{max-width:1180px;margin:0 auto;padding:18px;}
     .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;}
@@ -46,7 +58,7 @@
     button.active{background:var(--btnActive);color:var(--btnActiveText);border-color:var(--btnActive);}
 
     input{
-      background:#ffffff;color:var(--text);
+      background:var(--btn);color:var(--text);
       border:1px solid var(--border);
       border-radius:10px;
       padding:10px 10px;
@@ -58,6 +70,10 @@
     input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.15);}
     .smallInput{width:120px;}
     .tinyInput{width:100px;}
+
+    /* narrower inputs for first-row numeric boxes */
+    .narrowInput{width:110px;}
+    .narrowTiny{width:85px;}
 
     .group{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
     .label{
@@ -74,7 +90,7 @@
       width:100%;
       border-radius:12px;
       border:1px solid var(--border);
-      background:#ffffff;
+      background:var(--bg);
       display:block;
     }
     .status{
@@ -99,7 +115,7 @@
 
     .pill{
       border:1px solid var(--border);
-      background:#fff;
+      background:var(--btn);
       padding:6px 10px;
       border-radius:999px;
       font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
@@ -119,7 +135,7 @@
     }
     fieldset.field{
       border:1px solid var(--border);
-      background:#fff;
+      background:var(--btn);
       border-radius:14px;
       padding:10px 10px 12px;
       margin:0;
@@ -151,13 +167,13 @@
       border:1px solid var(--border);
       border-radius:12px;
       overflow:hidden;
-      background:#fff;
+      background:var(--btn);
     }
     .seg button{
       border:0;
       border-right:1px solid var(--border);
       border-radius:0;
-      background:#fff;
+      background:var(--btn);
     }
     .seg button:hover{background:var(--btnHover);}
     .seg button:last-child{border-right:0;}
@@ -178,7 +194,7 @@
       -webkit-overflow-scrolling:touch;
     }
     .jumpRow::-webkit-scrollbar{height:8px;}
-    .jumpRow::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:999px;}
+    .jumpRow::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px;}
     .jumpRow button{
       height:30px;
       padding:6px 8px;
@@ -196,7 +212,7 @@
       height:auto;
       border-radius:12px;
       box-shadow:0 6px 18px rgba(0,0,0,0.12);
-      background:#fff;
+      background:var(--btn);
     }
     #btnAck{ bottom:12px; }
     #btnFeedback{ bottom:56px; } /* sits above acknowledgments */
@@ -214,7 +230,7 @@
     }
     #ackCard{
       width:min(760px, 100%);
-      background:#fff;
+      background:var(--panel);
       border:1px solid var(--border);
       border-radius:12px;
       box-shadow:0 10px 30px rgba(0,0,0,0.2);
@@ -256,7 +272,7 @@
       <fieldset class="field">
         <legend>Central wavelength (<span id="unitTextC">Å</span>)</legend>
         <div class="group centerIsland">
-          <input id="centerInput" class="smallInput" type="number" step="0.001" />
+          <input id="centerInput" class="narrowInput" type="number" step="0.001" />
           <span class="label">(<span id="unitTextW">Å</span>)</span>
           <button id="btnCenterGo" title="Center window and plot">Go</button>
         </div>
@@ -271,7 +287,7 @@
             <button id="btnWin2" title="×2 window">×2</button>
             <button id="btnWin5" title="×5 window">×5</button>
           </div>
-          <input id="windowInput" class="tinyInput" type="number" step="0.001" />
+          <input id="windowInput" class="narrowTiny" type="number" step="0.001" />
           <span class="label">(<span id="unitTextW">Å</span>)</span>
         </div>
         <div class="subtitle" style="margin-top:6px;">Moddify window size</div>
@@ -281,7 +297,7 @@
         <legend>Window Step</legend>
         <div class="group">
           <span class="label">Step size</span>
-          <input id="stepInput" class="tinyInput" type="number" step="0.001" />
+          <input id="stepInput" class="narrowTiny" type="number" step="0.001" />
           <span class="label">(<span id="unitTextS">Å</span>)</span>
           <div class="seg">
             <button id="btnStepLeft" title="Move left by step">&lt;</button>
@@ -297,6 +313,7 @@
           <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
           <button id="btnLegend" title="Toggle legend">Legend</button>
           <button id="btnUnit" title="Toggle plotting unit">Å</button>
+          <button id="btnTheme" title="Toggle light/dark">Dark</button>
 
         </div>
         <div class="subtitle" style="margin-top:6px;">Display Options</div>
@@ -411,14 +428,14 @@
   position:fixed; inset:0; display:none; align-items:center; justify-content:center;
   background:rgba(0,0,0,0.35); z-index:9999; padding:18px;">
   <div style="
-    width:min(720px, 100%); background:#fff; border:1px solid #d1d5db; border-radius:12px;
+    width:min(720px, 100%); background:var(--panel); border:1px solid var(--border); border-radius:12px;
     box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #d1d5db;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
       <div style="font-weight:700;">Feedback</div>
       <button id="btnCloseFb" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
     </div>
     <div style="padding:12px 14px; font-size:14px; line-height:1.45;">
-      Please email <a href="mailto:apietrow@aip.de" style="color:#2563eb; text-decoration:none;">apietrow@aip.de</a> with feedback.
+      Please email <a href="mailto:apietrow@aip.de" style="color:var(--accent); text-decoration:none;">apietrow@aip.de</a> with feedback.
     </div>
   </div>
 </div>
@@ -428,9 +445,9 @@
   position:fixed; inset:0; display:none; align-items:center; justify-content:center;
   background:rgba(0,0,0,0.35); z-index:9999; padding:18px;">
   <div style="
-    width:min(900px, 100%); background:#fff; border:1px solid #d1d5db; border-radius:12px;
+    width:min(900px, 100%); background:var(--panel); border:1px solid var(--border); border-radius:12px;
     box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #d1d5db;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
       <div style="font-weight:700;">Wavelength + convolved spectrum (TSV)</div>
       <div style="display:flex; gap:10px; align-items:center;">
         <button id="btnCopyData" style="padding:8px 10px; border-radius:10px; height:36px;">Copy</button>
@@ -440,8 +457,8 @@
     <div style="padding:12px 14px;">
       <textarea id="dataText" style="
         width:100%; height:420px; box-sizing:border-box; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-        font-size:12px; border:1px solid #d1d5db; border-radius:10px; padding:10px;"></textarea>
-      <div id="dataMsg" style="margin-top:8px; font-size:12px; color:#4b5563;"></div>
+        font-size:12px; border:1px solid var(--border); border-radius:10px; padding:10px; background:var(--btn); color:var(--text);"></textarea>
+      <div id="dataMsg" style="margin-top:8px; font-size:12px; color:var(--muted);"></div>
     </div>
   </div>
 </div>
@@ -522,6 +539,9 @@
   const btnLabels = el("btnLabels");
   const btnLegend = el("btnLegend");
   const btnUnit   = el("btnUnit");
+  const btnTheme  = el("btnTheme");
+
+  let theme = "light";
   const btnFluxNorm = el("btnFluxNorm");
   const btnFluxCgs  = el("btnFluxCgs");
   const btnFluxFlam = el("btnFluxFlam");
@@ -596,6 +616,30 @@
   function closeAck(){ ackModal.style.display = "none"; }
   function openFb(){ fbModal.style.display = "flex"; }
   function closeFb(){ fbModal.style.display = "none"; }
+
+
+// ---- theme (light/dark) ----
+function applyTheme(t){
+  theme = (t === "dark") ? "dark" : "light";
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("theme", theme); } catch (e) {}
+  // Button shows the target mode (click to switch)
+  btnTheme.textContent = (theme === "dark") ? "Light" : "Dark";
+  btnTheme.classList.add("active");
+  btnTheme.setAttribute("aria-pressed", "true");
+}
+
+function initTheme(){
+  let saved = null;
+  try { saved = localStorage.getItem("theme"); } catch (e) {}
+  if (saved === "dark" || saved === "light"){
+    applyTheme(saved);
+    return;
+  }
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(prefersDark ? "dark" : "light");
+}
+
 
   // Line definitions in Å (used for jump + label/title formatting)
   const LINE_DEFS = [
@@ -721,6 +765,11 @@
     btnUnit.classList.add("active");
     btnUnit.setAttribute("aria-pressed", "true");
 
+    // theme button shows target theme
+    btnTheme.textContent = (theme === "dark") ? "Light" : "Dark";
+    btnTheme.classList.add("active");
+    btnTheme.setAttribute("aria-pressed", "true");
+
     // flux buttons
     btnFluxNorm.classList.toggle("active", flux === "norm");
     btnFluxCgs.classList.toggle("active", flux === "cgs");
@@ -771,6 +820,8 @@
     u.searchParams.set("refinf", refinf);
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
+    u.searchParams.set("theme",  theme);
+    u.searchParams.set("transparent", "0");
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
@@ -897,6 +948,11 @@
   btnUnit.addEventListener("click", () => {
     unit = (unit === "nm") ? "A" : "nm";
     syncUIFromState();
+    render();
+  });
+
+  btnTheme.addEventListener("click", () => {
+    applyTheme((theme === "dark") ? "light" : "dark");
     render();
   });
 
@@ -1092,6 +1148,8 @@
 
   r500 = DEF_R;
   setResolutionButtonActive(btnRinf);
+
+  initTheme();
 
   clampState();
   syncUIFromState();

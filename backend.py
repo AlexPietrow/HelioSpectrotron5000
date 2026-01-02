@@ -25,6 +25,9 @@ Controls (via query params):
 - refinf=0/1     : overlay the un-convolved reference spectrum (R=∞) on top of the convolved spectrum
 - unit=A/nm      : plotting unit only (selection in Å)
 - R500           : resolving power at 500 nm; uses FWHM_A = 5000 / R500
+- flux=norm/cgs/flam : normalized or absolute (per Hz / per Å)
+- theme=light/dark/auto : plot theme (auto currently treated as light unless frontend passes)
+- transparent=0/1 : if 1, figure background is transparent
 
 Run:
   uvicorn backend:app --reload --port 8000
@@ -61,6 +64,30 @@ DEFAULT_R500 = 1e12
 DPI = 160
 REPEAT_2D = 120
 
+# Theme colors (match your frontend dark theme intent)
+THEME_LIGHT = {
+    "bg": "#ffffff",
+    "panel": "#ffffff",
+    "text": "#111827",
+    "muted": "#6b7280",
+    "border": "#d1d5db",
+    "spec": "#000000",
+    "ref": "#000000",
+    "tell": "#ff0000",
+    "grid": "#e5e7eb",
+}
+THEME_DARK = {
+    "bg": "#0b1220",
+    "panel": "#111827",
+    "text": "#e5e7eb",
+    "muted": "#9ca3af",
+    "border": "#334155",
+    "spec": "#ffffff",
+    "ref": "#ffffff",
+    "tell": "#ff3b3b",   # red but pops on dark
+    "grid": "#334155",
+}
+
 # Resolve paths relative to this file
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -86,10 +113,6 @@ NEW_LINE_CSV = os.path.join(HERE, "babcock_clean_02012026.csv")
 # ----------------------------
 # ISPy atlas (lazy)
 # ----------------------------
-_fts = None
-_ATLAS_WMIN = None
-_ATLAS_WMAX = None
-
 def get_fts():
     """Return a FRESH ISPy atlas instance.
 
@@ -99,6 +122,7 @@ def get_fts():
     """
     return ispy_atlas.atlas()
 
+
 def get_atlas_range() -> Tuple[float, float]:
     fts = get_fts()
     w = np.asarray(getattr(fts, "wave"), dtype=float)
@@ -106,6 +130,7 @@ def get_atlas_range() -> Tuple[float, float]:
     if w.size == 0:
         raise RuntimeError("Could not determine ISPy atlas wavelength range (fts.wave missing/empty).")
     return float(np.nanmin(w)), float(np.nanmax(w))
+
 
 def fetch_ispy_air_norm(w0: float, w1: float):
     """Return wavelength [Å] and normalized intensity for [w0, w1].
@@ -138,9 +163,6 @@ def fetch_ispy_air_norm(w0: float, w1: float):
 
     return wav, I_norm
 
-# ----------------------------
-# Gaussian convolution (no SciPy)
-# ----------------------------
 
 def fetch_ispy_air_cgs_fnu(w0: float, w1: float):
     """Return wavelength [Å] and absolute intensity in cgs per Hz (I_nu) for [w0, w1]."""
@@ -179,6 +201,10 @@ def fetch_ispy_air_cgs_flam(w0: float, w1: float):
     sel = (wav >= w0) & (wav <= w1)
     return wav[sel], I[sel]
 
+
+# ----------------------------
+# Gaussian convolution (no SciPy)
+# ----------------------------
 def gaussian_kernel_1d(sigma: float) -> np.ndarray:
     """Normalized 1D Gaussian kernel."""
     if sigma <= 0:
@@ -189,6 +215,7 @@ def gaussian_kernel_1d(sigma: float) -> np.ndarray:
     k /= np.sum(k)
     return k
 
+
 def convolve_reflect(y: np.ndarray, k: np.ndarray) -> np.ndarray:
     """Convolve 1D array with kernel using reflect padding."""
     if k.size == 1:
@@ -196,6 +223,7 @@ def convolve_reflect(y: np.ndarray, k: np.ndarray) -> np.ndarray:
     pad = k.size // 2
     ypad = np.pad(y, pad_width=pad, mode="reflect")
     return np.convolve(ypad, k, mode="valid")
+
 
 def apply_resolution_R500(w: np.ndarray, y: np.ndarray, R500: float) -> np.ndarray:
     """Degrade y(w) by Gaussian with FWHM defined from resolving power at 500 nm."""
@@ -220,6 +248,7 @@ def apply_resolution_R500(w: np.ndarray, y: np.ndarray, R500: float) -> np.ndarr
     k = gaussian_kernel_1d(sigma_samples)
     return convolve_reflect(y, k)
 
+
 # ----------------------------
 # Tellurics (TAPAS lookup)
 # ----------------------------
@@ -243,6 +272,7 @@ def _load_telat(path: str) -> Tuple[np.ndarray, np.ndarray]:
         idx = np.argsort(w)
         w, t = w[idx], t[idx]
     return w, t
+
 
 # alt in meters
 TELLURICS: Dict[int, Tuple[np.ndarray, np.ndarray]] = {
@@ -278,6 +308,7 @@ if not (np.isfinite(WMIN) and np.isfinite(WMAX) and WMIN < WMAX):
 old_wav = old_ids = None
 new_wav = new_ids = None
 
+
 def clean_wavelength(val):
     """Extract first numeric token from wavelength string."""
     import re
@@ -288,6 +319,7 @@ def clean_wavelength(val):
         return np.nan
     m = re.search(r"\d+(?:\.\d+)?", val)
     return float(m.group(0)) if m else np.nan
+
 
 def clean_ew(val):
     """Extract numeric part of EW (e.g. '14N' → 14)."""
@@ -300,6 +332,7 @@ def clean_ew(val):
     m = re.search(r"[-+]?\d+(?:\.\d+)?", val)
     return float(m.group(0)) if m else np.nan
 
+
 def clean_strength(val):
     """Extract numeric strength from messy strings."""
     import re
@@ -311,6 +344,7 @@ def clean_strength(val):
     m = re.search(r"[-+]?\d+(?:\.\d+)?", val)
     return float(m.group(0)) if m else np.nan
 
+
 def _read_csv_auto(path: str):
     """Try comma, then semicolon."""
     import pandas as pd
@@ -318,6 +352,7 @@ def _read_csv_auto(path: str):
     if len(df.columns) == 1 and ";" in str(df.columns[0]):
         df = pd.read_csv(path, sep=";")
     return df
+
 
 def bin_lines(wav: np.ndarray, ids: np.ndarray, bin_A: float = 0.2):
     """
@@ -328,10 +363,8 @@ def bin_lines(wav: np.ndarray, ids: np.ndarray, bin_A: float = 0.2):
         return wav, ids
 
     bins = np.round(wav / bin_A).astype(int)
-
     _, idx = np.unique(bins, return_index=True)
     idx = np.sort(idx)
-
     return wav[idx], ids[idx]
 
 
@@ -354,7 +387,6 @@ def load_moore_lines(path: str):
     df["ew"]         = df["ew"].apply(clean_ew)
     df["id"]         = df["id"].fillna("").astype(str)
 
-    # basic filtering like you do for IA
     df = df.dropna(subset=["wavelength"])
     df = df[df["id"].str.strip() != ""]
 
@@ -362,7 +394,6 @@ def load_moore_lines(path: str):
         return np.array([], dtype=float), np.array([], dtype=str)
 
     return df["wavelength"].to_numpy(float), df["id"].to_numpy(str)
-
 
 
 def load_ia_lines(path: str):
@@ -388,6 +419,7 @@ def load_ia_lines(path: str):
 
     return df["wav"].to_numpy(float), df["id"].to_numpy(str)
 
+
 try:
     old_wav, old_ids = load_moore_lines(OLD_LINE_CSV)
     old_wav, old_ids = bin_lines(old_wav, old_ids, bin_A=0.9)
@@ -403,6 +435,50 @@ except Exception as e:
     print(f"[WARN] IA line CSV not loaded: {e}", flush=True)
     new_wav = new_ids = None
 
+
+# ----------------------------
+# Theme helpers
+# ----------------------------
+def _pick_theme(theme: str) -> Dict[str, str]:
+    t = (theme or "light").strip().lower()
+    if t == "dark":
+        return THEME_DARK
+    if t == "auto":
+        # backend cannot know OS preference; frontend should pass explicit dark/light.
+        # Treat auto as light for now.
+        return THEME_LIGHT
+    return THEME_LIGHT
+
+
+def _style_axes(ax, theme_dict: Dict[str, str]):
+    # Face/background
+    ax.set_facecolor(theme_dict["panel"])
+
+    # Spines
+    for s in ax.spines.values():
+        s.set_color(theme_dict["border"])
+
+    # Ticks + labels
+    ax.tick_params(colors=theme_dict["text"], which="both")
+    ax.xaxis.label.set_color(theme_dict["text"])
+    ax.yaxis.label.set_color(theme_dict["text"])
+    ax.title.set_color(theme_dict["text"])
+
+    # Grid off by default; if you ever enable, use theme_dict["grid"]
+    ax.grid(False)
+
+
+def _style_legend(leg, theme_dict: Dict[str, str]):
+    if leg is None:
+        return
+    frame = leg.get_frame()
+    frame.set_facecolor(theme_dict["panel"])
+    frame.set_edgecolor(theme_dict["border"])
+    frame.set_alpha(1.0)
+    for txt in leg.get_texts():
+        txt.set_color(theme_dict["text"])
+
+
 # ----------------------------
 # Rendering
 # ----------------------------
@@ -417,15 +493,19 @@ def render_segment_png(
     refinf_on: bool,
     unit: str,
     flux: str = "norm",
+    theme: str = "light",
+    transparent: bool = False,
 ) -> bytes:
     """Render [start,end] slice (selection in Å). unit affects plotting only."""
     unit = (unit or "A").strip().lower()
     plot_in_nm = unit in ("nm", "nanometer", "nanometers")
 
     flux = (flux or "norm").strip().lower()
-
     plot_cgs = (flux != "norm")
-    tell_scale = 1.0  # updated in absolute-flux modes
+
+    theme_dict = _pick_theme(theme)
+
+    # Fetch data
     if flux == "norm":
         w, y_base = fetch_ispy_air_norm(start, end)
     elif flux == "cgs":
@@ -435,6 +515,7 @@ def render_segment_png(
     else:
         w, y_base = fetch_ispy_air_norm(start, end)
 
+    # Figure
     fig, (ax1, ax2) = plt.subplots(
         nrows=2,
         figsize=(12, 4.8),
@@ -442,12 +523,21 @@ def render_segment_png(
         constrained_layout=True,
     )
 
+    # Backgrounds
+    fig.patch.set_facecolor(theme_dict["bg"])
+    ax1.set_facecolor(theme_dict["panel"])
+    ax2.set_facecolor(theme_dict["panel"])
+
+    _style_axes(ax1, theme_dict)
+    _style_axes(ax2, theme_dict)
+
     if w.size == 0:
-        ax1.text(0.5, 0.5, "Empty slice", ha="center", va="center", transform=ax1.transAxes)
+        ax1.text(0.5, 0.5, "Empty slice", ha="center", va="center",
+                 transform=ax1.transAxes, color=theme_dict["text"])
         ax1.axis("off")
         ax2.axis("off")
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=DPI)
+        fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
         plt.close(fig)
         gc.collect()
         return buf.getvalue()
@@ -460,18 +550,15 @@ def render_segment_png(
     # Toggle telluric application/overlay
     if not tellurics_on:
         t_seg = np.ones_like(t_seg)
-        # keep a display array for plotting code paths
         tint_for_display = np.ones_like(w)
     else:
         tint_for_display = t_seg
 
     # ---- PHYSICALLY CORRECT ORDER ----
-    # final spectrum: (solar * telluric) convolved
     y_highres = np.asarray(y_base * t_seg, dtype=float)
     y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
-    y_ref = y_highres  # reference (R=∞) spectrum for optional overlay
-    # tellurics for DISPLAY: convolve telluric transmission too
-    t_disp = np.asarray(apply_resolution_R500(w, tint_for_display, R500), dtype=float)
+    y_ref     = y_highres
+    t_disp    = np.asarray(apply_resolution_R500(w, tint_for_display, R500), dtype=float)
 
     # Convert plotting units (data selection remains in Å)
     w_plot     = (w / 10.0) if plot_in_nm else w
@@ -479,83 +566,84 @@ def render_segment_png(
     end_plot   = (end / 10.0) if plot_in_nm else end
     unit_label = "nm" if plot_in_nm else "Å"
 
-    # Plot spectrum + tellurics
     ax1.set_xlim(start_plot, end_plot)
 
-    if plot_cgs:
-        # Spectrum (absolute units) — NEVER rescale values; only adjust ylim for headroom.
-        if refinf_on and (np.isfinite(R500) and R500 < 1e8):
-            ax1.plot(w_plot, y_ref, color="black", lw=1.0, alpha=0.5, zorder=1,
-                     label="REF ∞" if legend_on else None)
-        ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum" if legend_on else None)
+    # Colors
+    spec_col = theme_dict["spec"]
+    ref_col  = theme_dict["ref"]
+    tell_col = theme_dict["tell"]
 
-        # Estimate continuum level (robust): high percentile of y_final within the window.
-        # Used ONLY for axis limits and for mapping the telluric (0–1) axis onto the same height as the continuum.
+    # Plot spectrum + tellurics
+    if plot_cgs:
+        if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+            ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
+                     label="REF ∞" if legend_on else None)
+        ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
+                 label="Spectrum" if legend_on else None)
+
+        # Robust continuum estimate only for axis scaling
         y_cont = float(np.nanpercentile(y_final, 99.0)) if y_final.size else 1.0
         if not np.isfinite(y_cont) or y_cont <= 0:
             y_cont = float(np.nanmax(y_final)) if np.isfinite(np.nanmax(y_final)) else 1.0
         if y_cont <= 0:
             y_cont = 1.0
 
-        headroom = 1.20 if labels_on else 1.20
+        headroom = 1.20
         ax1.set_ylim(0, headroom * y_cont)
 
-        # Tellurics overlay: keep values in transmission units (~0–1).
-        # Use a secondary axis via twinx; align transmission=1 with y=y_cont purely through axis limits.
+        # Tellurics overlay on RHS
+        axT = None
         if tellurics_on:
             axT = ax1.twinx()
-            # With left ylim=(0, headroom*y_cont) and right ylim=(0, headroom), t=1 sits at the continuum height.
+            axT.set_facecolor("none")  # avoid overlay panel block
+            for s in axT.spines.values():
+                s.set_color(theme_dict["border"])
+            axT.tick_params(colors=theme_dict["text"], which="both")
+            axT.yaxis.label.set_color(theme_dict["text"])
             axT.set_ylim(0, headroom)
-            axT.plot(w_plot, t_disp, color="red", lw=1.0, zorder=3,
+            axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
                      label="Tellurics" if legend_on else None)
             axT.set_ylabel("Telluric transmission")
             axT.grid(False)
 
-        ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam" else "Intensity (cgs per Hz)" if flux == "cgs" else "Intensity (cgs)")
+        ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam"
+                       else "Intensity (cgs per Hz)" if flux == "cgs"
+                       else "Intensity (cgs)")
 
         if legend_on:
             handles, labels = ax1.get_legend_handles_labels()
-            if tellurics_on:
+            if tellurics_on and axT is not None:
                 h2, l2 = axT.get_legend_handles_labels()
                 handles += h2
                 labels  += l2
-            ax1.legend(handles, labels, loc="upper right", frameon=True,
-                       facecolor="white", edgecolor="black", framealpha=1.0, fontsize=10)
+            leg = ax1.legend(handles, labels, loc="upper right", frameon=True, fontsize=10)
+            _style_legend(leg, theme_dict)
 
     else:
-        if legend_on:
-            if tellurics_on:
-                ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3, label="Tellurics")
-            if refinf_on and (np.isfinite(R500) and R500 < 1e8):
-                ax1.plot(w_plot, y_ref, color="black", lw=1.0, alpha=0.5, zorder=1, label="REF ∞")
-            ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2, label="Spectrum")
-        else:
-            if tellurics_on:
-                ax1.plot(w_plot, t_disp,  color="red",   lw=1.0, zorder=3)
-            if refinf_on and (np.isfinite(R500) and R500 < 1e8):
-                ax1.plot(w_plot, y_ref, color="black", lw=1.0, alpha=0.5, zorder=1)
-            ax1.plot(w_plot, y_final, color="black", lw=2.0, zorder=2)
+        if tellurics_on:
+            ax1.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
+                     label="Tellurics" if legend_on else None)
+        if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+            ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
+                     label="REF ∞" if legend_on else None)
+        ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
+                 label="Spectrum" if legend_on else None)
 
-        ax1.set_ylim(0, 1.20 if labels_on else 1.20)
+        ax1.set_ylim(0, 1.20)
         ax1.set_ylabel("Normalized intensity")
 
         if legend_on:
-            ax1.legend(loc="upper right", frameon=True, facecolor="white",
-                       edgecolor="black", framealpha=1.0, fontsize=10)
+            leg = ax1.legend(loc="upper right", frameon=True, fontsize=10)
+            _style_legend(leg, theme_dict)
 
     r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
-    flux_txt = flux
-    ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, flux={flux_txt})")
-
+    ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, flux={flux})")
 
     # ----------------------------
     # Line overlays (gated by labels_on)
     # ----------------------------
     if labels_on:
         MAX_LABELS = 60
-
-        ax_line = ax1
-        y_line_hi = 1.0  # use axes-fraction text placement; ylim provides headroom
 
         if old_wav is not None:
             mask = (old_wav >= start) & (old_wav <= end)
@@ -566,16 +654,7 @@ def render_segment_png(
                 pi = pi[:MAX_LABELS]
             for x, lab in zip(pw, pi):
                 x_plot = (x / 10.0) if plot_in_nm else x
-                ax1.axvline(
-                    x_plot,
-                    ymin=0.0,
-                    ymax=0.82,
-                    lw=0.4,
-                    alpha=0.5,
-                    zorder=0,
-                    color="k",
-                )
-
+                ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
                 ax1.text(
                     x_plot, 0.84, lab,
                     transform=ax1.get_xaxis_transform(),
@@ -583,7 +662,7 @@ def render_segment_png(
                     fontsize=8,
                     ha="center",
                     va="bottom",
-                    color="k",
+                    color=spec_col,
                 )
 
         if new_wav is not None:
@@ -595,16 +674,7 @@ def render_segment_png(
                 pi = pi[:MAX_LABELS]
             for x, lab in zip(pw, pi):
                 x_plot = (x / 10.0) if plot_in_nm else x
-                ax1.axvline(
-                    x_plot,
-                    ymin=0.0,
-                    ymax=0.82,
-                    lw=0.4,
-                    alpha=0.5,
-                    zorder=0,
-                    color="k",
-                )
-
+                ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
                 ax1.text(
                     x_plot, 0.84, lab,
                     transform=ax1.get_xaxis_transform(),
@@ -612,10 +682,10 @@ def render_segment_png(
                     fontsize=8,
                     ha="center",
                     va="bottom",
+                    color=spec_col,
                 )
 
     # 2D strip: STRICTLY from y_final (after all processing)
-    # 2D strip is always shown normalized for contrast.
     y_strip = np.asarray(y_final, dtype=float)
     p1 = float(np.nanpercentile(y_strip, 1))
     p99 = float(np.nanpercentile(y_strip, 99))
@@ -623,6 +693,7 @@ def render_segment_png(
         p1, p99 = float(np.nanmin(y_strip)), float(np.nanmax(y_strip))
     y_strip_n = (y_strip - p1) / (p99 - p1) if (p99 > p1) else y_strip * 0.0
     y_strip_n = np.clip(y_strip_n, 0.0, 1.0)
+
     img2d = np.tile(y_strip_n[np.newaxis, :], (REPEAT_2D, 1))
     ax2.imshow(
         img2d,
@@ -635,21 +706,26 @@ def render_segment_png(
     ax2.set_xlim(start_plot, end_plot)
     ax2.set_xlabel(f"Wavelength [{unit_label}]")
     ax2.set_yticks([])
+    ax2.xaxis.label.set_color(theme_dict["text"])
+    ax2.tick_params(colors=theme_dict["text"], which="both")
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=DPI)
+    fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
     plt.close(fig)
     gc.collect()
     return buf.getvalue()
+
 
 # ----------------------------
 # FastAPI app
 # ----------------------------
 app = FastAPI()
 
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     return PlainTextResponse("ok")
+
 
 @app.get("/meta", response_class=PlainTextResponse)
 def meta():
@@ -664,6 +740,7 @@ def meta():
         f"N_MOORE={(len(old_wav) if old_wav is not None else 0)}\n"
         f"N_IA={(len(new_wav) if new_wav is not None else 0)}\n"
     )
+
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -686,18 +763,21 @@ def index():
         },
     )
 
+
 @app.get("/segment.png")
 def segment_png(
     start: float,
     width: Optional[float] = None,
     R500: Optional[float] = None,
-    alt: Optional[int] = 2500,   # 0 or 2500 (meters)
-    labels: Optional[int] = 1,   # 0/1
-    legend: Optional[int] = 0,   # 0/1
-    tellurics: Optional[int] = 1,  # 0/1
-    refinf: Optional[int] = 0,     # 0/1  overlay REF ∞ (unconvolved)
-    unit: Optional[str] = "A",   # 'A' or 'nm' (plotting only)
-    flux: Optional[str] = "norm",  # 'norm' or 'cgs'
+    alt: Optional[int] = 2500,      # 0 or 2500 (meters)
+    labels: Optional[int] = 1,      # 0/1
+    legend: Optional[int] = 0,      # 0/1
+    tellurics: Optional[int] = 1,   # 0/1
+    refinf: Optional[int] = 0,      # 0/1 overlay REF ∞ (unconvolved)
+    unit: Optional[str] = "A",      # 'A' or 'nm' (plotting only)
+    flux: Optional[str] = "norm",   # 'norm' or 'cgs' or 'flam'
+    theme: Optional[str] = "light", # 'light'|'dark'|'auto'
+    transparent: Optional[int] = 0, # 0/1
 ):
     try:
         start = float(start)
@@ -712,9 +792,11 @@ def segment_png(
         alt_m = int(alt) if int(alt) in (0, 2500) else 2500
         labels_on = bool(int(labels)) if labels is not None else True
         legend_on = bool(int(legend)) if legend is not None else False
-
         tellurics_on = bool(int(tellurics)) if tellurics is not None else True
-        refinf_on   = bool(int(refinf)) if refinf is not None else False
+        refinf_on = bool(int(refinf)) if refinf is not None else False
+
+        theme = (theme or "light")
+        transparent_on = bool(int(transparent)) if transparent is not None else False
 
         png = render_segment_png(
             start, end,
@@ -726,6 +808,8 @@ def segment_png(
             refinf_on=refinf_on,
             unit=unit,
             flux=flux,
+            theme=theme,
+            transparent=transparent_on,
         )
         return Response(
             content=png,
@@ -743,17 +827,18 @@ def segment_png(
             headers={"Cache-Control": "no-store"},
         )
 
+
 @app.get("/segment.txt", response_class=PlainTextResponse)
 def segment_txt(
     start: float,
     width: Optional[float] = None,
     R500: Optional[float] = None,
-    alt: Optional[int] = 2500,   # 0 or 2500 (meters)
-    labels: Optional[int] = 1,   # unused; kept for symmetry
-    legend: Optional[int] = 0,   # unused; kept for symmetry
-    tellurics: Optional[int] = 1,  # 0/1
-    unit: Optional[str] = "A",   # output unit: 'A' or 'nm'
-    flux: Optional[str] = "norm",  # 'norm' or 'cgs'
+    alt: Optional[int] = 2500,      # 0 or 2500 (meters)
+    labels: Optional[int] = 1,      # unused; kept for symmetry
+    legend: Optional[int] = 0,      # unused; kept for symmetry
+    tellurics: Optional[int] = 1,   # 0/1
+    unit: Optional[str] = "A",      # output unit: 'A' or 'nm'
+    flux: Optional[str] = "norm",   # 'norm' or 'cgs' or 'flam'
 ):
     try:
         start = float(start)
@@ -767,9 +852,9 @@ def segment_txt(
 
         alt_m = int(alt) if int(alt) in (0, 2500) else 2500
 
-        # data in Å
         flux = (flux or "norm").strip().lower()
         plot_cgs = (flux != "norm")
+
         if flux == "norm":
             w, y_base = fetch_ispy_air_norm(start, end)
         elif flux == "cgs":
@@ -778,6 +863,7 @@ def segment_txt(
             w, y_base = fetch_ispy_air_cgs_flam(start, end)
         else:
             w, y_base = fetch_ispy_air_norm(start, end)
+
         if w.size == 0:
             return PlainTextResponse("# empty slice\n", status_code=200)
 
@@ -788,10 +874,9 @@ def segment_txt(
         if not tellurics_on:
             t_seg = np.ones_like(t_seg)
 
-        # Physically correct final spectrum
         y_highres = np.asarray(y_base * t_seg, dtype=float)
         y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
-        # Output units
+
         u = (unit or "A").strip().lower()
         if u in ("nm", "nanometer", "nanometers"):
             w_out = w / 10.0
@@ -810,16 +895,17 @@ def segment_txt(
         print(tb, flush=True)
         return PlainTextResponse(tb, status_code=500)
 
+
 @app.get("/hover.json", response_class=JSONResponse)
 def hover_json(
     start: float,
     x: float,
     width: Optional[float] = None,
     R500: Optional[float] = None,
-    alt: Optional[int] = 2500,     # 0 or 2500 (meters)
-    tellurics: Optional[int] = 1,  # 0/1
-    unit: Optional[str] = "A",     # x unit: 'A' or 'nm' (same as plotting unit)
-    flux: Optional[str] = "norm",  # 'norm' or 'cgs' or 'flam'
+    alt: Optional[int] = 2500,      # 0 or 2500 (meters)
+    tellurics: Optional[int] = 1,   # 0/1
+    unit: Optional[str] = "A",      # x unit: 'A' or 'nm' (same as plotting unit)
+    flux: Optional[str] = "norm",   # 'norm' or 'cgs' or 'flam'
 ):
     try:
         start = float(start)
@@ -856,13 +942,7 @@ def hover_json(
 
         if w.size == 0:
             return JSONResponse(
-                {
-                    "ok": False,
-                    "reason": "empty slice",
-                    "unit": unit_label,
-                    "x": x,
-                    "y": None,
-                },
+                {"ok": False, "reason": "empty slice", "unit": unit_label, "x": x, "y": None},
                 status_code=200,
             )
 
@@ -873,33 +953,18 @@ def hover_json(
         if not tellurics_on:
             t_seg = np.ones_like(t_seg)
 
-        # Physically correct final spectrum
         y_highres = np.asarray(y_base * t_seg, dtype=float)
         y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
 
         if not (w[0] <= x_A <= w[-1]):
             return JSONResponse(
-                {
-                    "ok": True,
-                    "unit": unit_label,
-                    "x": x,
-                    "y": None,
-                    "note": "x out of slice",
-                },
+                {"ok": True, "unit": unit_label, "x": x, "y": None, "note": "x out of slice"},
                 status_code=200,
             )
 
         y = float(np.interp(x_A, w, y_final))
 
-        return JSONResponse(
-            {
-                "ok": True,
-                "unit": unit_label,
-                "x": x,
-                "y": y,
-            },
-            status_code=200,
-        )
+        return JSONResponse({"ok": True, "unit": unit_label, "x": x, "y": y}, status_code=200)
 
     except Exception:
         tb = traceback.format_exc()
