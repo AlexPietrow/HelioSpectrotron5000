@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SpectroHeliotron 5000</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
+  <title>Heliospectrotron 5000</title>
+
   <style>
     :root{
       --bg:#ffffff;
@@ -70,6 +72,7 @@
     input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.15);}
     .smallInput{width:120px;}
     .tinyInput{width:100px;}
+    .tinyInput2{width:80px;}
 
     /* narrower inputs for first-row numeric boxes */
     .narrowInput{width:110px;}
@@ -169,6 +172,9 @@
       overflow:hidden;
       background:var(--btn);
     }
+    .controlsRow {
+      align-items: stretch;
+    }
     .seg button{
       border:0;
       border-right:1px solid var(--border);
@@ -196,7 +202,7 @@
     .jumpRow::-webkit-scrollbar{height:8px;}
     .jumpRow::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px;}
     .jumpRow button{
-      height:30px;
+      height:40px;
       padding:6px 8px;
       font-size:12px;
       border-radius:10px;
@@ -214,8 +220,8 @@
       box-shadow:0 6px 18px rgba(0,0,0,0.12);
       background:var(--btn);
     }
-    #btnAck{ bottom:12px; }
-    #btnFeedback{ bottom:56px; } /* sits above acknowledgments */
+    #btnFeedback{ bottom:12px; }
+    #btnAck{ bottom:56px; } /* sits above acknowledgments */
 
     /* --- acknowledgments modal --- */
     #ackModal{
@@ -307,21 +313,16 @@
         <div class="subtitle" style="margin-top:6px;">Navigate Spectrum</div>
       </fieldset>
 
-            <fieldset class="field" style="min-width:auto;">
+      <fieldset class="field" style="min-width:auto;">
         <legend>Display</legend>
         <div class="seg">
           <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
           <button id="btnLegend" title="Toggle legend">Legend</button>
           <button id="btnUnit" title="Toggle plotting unit">Å</button>
           <button id="btnTheme" title="Toggle light/dark">Dark</button>
-
         </div>
         <div class="subtitle" style="margin-top:6px;">Display Options</div>
       </fieldset>
-
-
-
-
 
     </div>
 
@@ -340,27 +341,27 @@
             <button id="btnR200" title="R=200,000">200k</button>
             <button id="btnRinf" class="active" title="No degradation (∞)">∞</button>
           </div>
-          <input id="r500Input" class="smallInput" type="number" step="1" />
+          <input id="r500Input" class="tinyInput" type="number" step="1" />
           <button id="btnRefInf" title="Toggle overlay of unconvolved reference (R=∞) spectrum">REF∞</button>
-          
         </div>
         <div class="subtitle" style="margin-top:6px;">Change spectral resolution</div>
       </fieldset>
 
-<fieldset class="field ">
-  <legend>Telurics</legend>
+      <fieldset class="field ">
+        <legend>Telurics</legend>
 
-  <div class="group" style="flex-wrap:wrap;">
-    <div class="seg">
-      <button id="btnAlt0">Sea level</button>
-      <button id="btnAlt2500" class="active">2500 m</button>
-      </div>
-      <button id="btnTellurics" class="active" title="Toggle telluric transmission overlay">On</button>
-    
-  </div>
+        <div class="group" style="flex-wrap:wrap;">
+          <div class="seg">
+            <button id="btnAlt0">Sea level</button>
+            <button id="btnAlt2500" class="active">2500 m</button>
+          </div>
+          <button id="btnTellurics" class="active" title="Toggle telluric transmission overlay">On</button>
+        </div>
 
-  <div class="subtitle" style="margin-top:6px;">Change altitude</div>
-</fieldset>
+        <div class="subtitle" style="margin-top:6px;">Change altitude</div>
+      </fieldset>
+
+
 
       <fieldset class="field" style="min-width:auto;">
         <legend>Flux</legend>
@@ -371,7 +372,6 @@
         </div>
         <div class="subtitle" style="margin-top:6px;">Units for Flux.</div>
       </fieldset>
-
 
       <fieldset class="field" style="min-width:auto;">
         <legend>Export</legend>
@@ -384,28 +384,43 @@
 
     </div>
 
-    <div class="divider"></div>
+<div class="divider"></div>
 
-    <!-- Row 4: Jump to -->
-    <div class="controlsRow">
-      <fieldset class="field" style="width:100%;">
-        <legend>Jump to</legend>
-        <div class="jumpRow">
-          <button id="btnCaK"></button>
-          <button id="btnCaH"></button>
-          <button id="btnHbeta"></button>
-          <button id="btnMgB1"></button>
-          <button id="btnHeD3"></button>
-          <button id="btnNaD1"></button>
-          <button id="btnFe6173"></button>
-          <button id="btnFe6302"></button>
-          <button id="btnHalpha"></button>
-          <button id="btnKI7699"></button>
-          <button id="btnCaIIIR"></button>
-          <button id="btnHe10830"></button>
-        </div>
-      </fieldset>
+<!-- Row 4: Wavelength + Jump to -->
+<div class="controlsRow">
+
+  <!-- Wavelength toggle -->
+  <fieldset class="field" style="min-width:auto;">
+    <legend>Wavelength</legend>
+    <div class="seg">
+      <button id="btnAir" class="active" title="Use air wavelengths">Air</button>
+      <button id="btnVac" title="Use vacuum wavelengths">Vacuum</button>
     </div>
+    <div class="subtitle" style="margin-top:6px;">Wavelength medium</div>
+  </fieldset>
+
+  <!-- Jump to -->
+  <fieldset class="field" style="flex:1;">
+    <legend>Jump to</legend>
+    <div class="jumpRow">
+      <button id="btnCaK"></button>
+      <button id="btnCaH"></button>
+      <button id="btnHbeta"></button>
+      <button id="btnMgB1"></button>
+      <button id="btnHeD3"></button>
+      <button id="btnNaD1"></button>
+      <button id="btnFe6173"></button>
+      <button id="btnFe6302"></button>
+      <button id="btnHalpha"></button>
+      <button id="btnKI7699"></button>
+      <button id="btnCaIIIR"></button>
+      <button id="btnHe10830"></button>
+    </div>
+        <div class="subtitle" style="margin-top:6px;">Frequently used spectral diagnostics.</div>
+  </fieldset>
+
+</div>
+
 
     <div class="imgwrap">
       <img id="img" alt="segment" />
@@ -420,8 +435,9 @@
 </div>
 
 <!-- Feedback + Acknowledgments -->
-<button id="btnFeedback" title="Feedback">Feedback</button>
 <button id="btnAck" title="Acknowledgments">Acknowledgments</button>
+<button id="btnFeedback" title="Legal Notice & Privacy Policy">Legal Notice &amp; Privacy Policy</button>
+
 
 <!-- Feedback Modal (simple) -->
 <div id="fbModal" style="
@@ -431,11 +447,28 @@
     width:min(720px, 100%); background:var(--panel); border:1px solid var(--border); border-radius:12px;
     box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
     <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
-      <div style="font-weight:700;">Feedback</div>
+      <div style="font-weight:700;">Legal Notice &amp; Privacy Policy</div>
       <button id="btnCloseFb" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
     </div>
-    <div style="padding:12px 14px; font-size:14px; line-height:1.45;">
-      Please email <a href="mailto:apietrow@aip.de" style="color:var(--accent); text-decoration:none;">apietrow@aip.de</a> with feedback.
+    <div id="ackBody">
+      <p>
+        The HelioSpectrotron is a service by the Leibniz-Institute for Astrophysics Potsdam (AIP).
+        The impressum of the AIP can be found at
+        <a href="https://www.aip.de/en/impressum"
+           target="_blank" rel="noopener noreferrer"
+           style="color:var(--accent); text-decoration:none;">
+          https://www.aip.de/en/impressum
+        </a>.
+      </p>
+      <p>
+        Protection of your privacy when using our websites is important to us.
+        The HelioSpectrotron follows the Data Protection Statement of the AIP, which is accessible at
+        <a href="https://www.aip.de/en/impressum/Data-Protection-Statement"
+           target="_blank" rel="noopener noreferrer"
+           style="color:var(--accent); text-decoration:none;">
+          https://www.aip.de/en/impressum/Data-Protection-Statement
+        </a>.
+      </p>
     </div>
   </div>
 </div>
@@ -467,39 +500,83 @@
 <div id="ackModal">
   <div id="ackCard">
     <div id="ackHead">
-      <div style="font-weight:700;">Acknowledgments</div>
+      <div style="font-weight:700;">Acknowledgments | Sofware version 1.0</div>
       <div style="display:flex; gap:10px; align-items:center;">
         <button id="btnCloseAck" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
       </div>
     </div>
-    <div id="ackBody">
-      <p><strong>Code and design</strong><br>
-      A. G. M. Pietrow</p>
+<div id="ackBody">
+  <p>
+    This web atlas combines published solar reference spectra, atmospheric transmission modelling,
+    and curated line-identification lists to enable interactive inspection of the solar spectrum.
+  </p>
 
-      <p><strong>Solar atlas</strong><br>
-      Neckel &amp; Labs (1984)<br>
+<p><strong>Author and implementation</strong><br>
+  A. G. M. Pietrow
+  (<a href="https://github.com/AlexPietrow/HelioSpectrotron5000"
+      target="_blank" rel="noopener noreferrer">code repository</a>)
+</p>
+
+
+  <p><strong>Data and external resources</strong></p>
+  <ul style="margin-top:6px; margin-bottom:10px;">
+    <li>
+      <strong>Solar reference atlas:</strong> Neckel &amp; Labs (1984)
+    </li>
+    <li>
+      <strong>Telluric transmission:</strong> TAPAS atmospheric transmission service
+      (Bertaux et&nbsp;al.&nbsp;2014)
+    </li>
+    <li>
+      <strong>Line identifications:</strong> Moore et&nbsp;al.&nbsp;(1966) and
+      Babcock &amp; Moore (1947)
+    </li>
+    <li>
+      <strong>Air–vacuum wavelength conversion:</strong> Greisen et&nbsp;al.&nbsp;(2006)
+    </li>
+  </ul>
+
+  <p><strong>How to cite</strong><br>
+    If you use this atlas in a publication, please cite the reference paper
+    <em>[publication pending]</em> and the underlying resources listed below, as appropriate.
+  </p>
+
+  <p><strong>References</strong></p>
+  <ol style="margin-top:6px;">
+    <li>
+      Neckel, H., &amp; Labs, D. (1984), <em>Solar Physics</em>, 90, 205.
       <a href="https://ui.adsabs.harvard.edu/abs/1984SoPh...90..205N/abstract" target="_blank" rel="noopener noreferrer">
-        https://ui.adsabs.harvard.edu/abs/1984SoPh...90..205N/abstract
-      </a></p>
-
-      <p><strong>Telluric transmission</strong><br>
-      Bertaux et al. (2014), TAPAS atmospheric transmission service<br>
+        ADS
+      </a>
+    </li>
+    <li>
+      Bertaux, J.-L., et&nbsp;al. (2014), <em>A&amp;A</em>, 564, A46 (TAPAS).
       <a href="https://ui.adsabs.harvard.edu/abs/2014A%26A...564A..46B/abstract" target="_blank" rel="noopener noreferrer">
-        https://ui.adsabs.harvard.edu/abs/2014A%26A...564A..46B/abstract
-      </a></p>
+        ADS
+      </a>
+    </li>
+    <li>
+      Moore, C. E., Minnaert, M. G. J., &amp; Houtgast, J. (1966),
+      <em>The Solar Spectrum 2935–8770 Å</em>.
+      <a href="https://ui.adsabs.harvard.edu/abs/1966sst..book.....M/abstract" target="_blank" rel="noopener noreferrer">
+        ADS
+      </a>
+    </li>
+    <li>
+      Babcock, H. W., &amp; Moore, C. E. (1947), <em>The Solar Spectrum 6600–13495 Å</em>.
+      <a href="https://ui.adsabs.harvard.edu/abs/1947PMtW....8....1B/abstract" target="_blank" rel="noopener noreferrer">
+        ADS
+      </a>
+    </li>
+    <li>
+      Greisen, E. W., et&nbsp;al. (2006), <em>A&amp;A</em>, 446, 747.
+      <a href="https://ui.adsabs.harvard.edu/abs/2006A%26A...446..747G/abstract" target="_blank" rel="noopener noreferrer">
+        ADS
+      </a>
+    </li>
+  </ol>
+</div>
 
-      <p><strong>Line identifications</strong><br>
-      Moore et al. (1966)<br>
-      <a href="https://ui.adsabs.harvard.edu/abs/1966sst..book.....M" target="_blank" rel="noopener noreferrer">
-        https://ui.adsabs.harvard.edu/abs/1966sst..book.....M
-      </a><br>
-      Babcock &amp; Moore (1947)</p>
-
-      <p>
-        When using this atlas, please cite the reference work <em>[publication pending]</em>,
-        and the relevant citations from above.
-      </p>
-    </div>
   </div>
 </div>
 
@@ -507,7 +584,7 @@
 (() => {
     function el(id) { return document.getElementById(id); }
 
-// Backend-provided defaults (Å)
+  // Backend-provided defaults (Å)
   const WMIN_A  = parseFloat("__WMIN__");
   const WMAX_A  = parseFloat("__WMAX__");
   const DEF_W_A = parseFloat("__WIDTH__");
@@ -533,8 +610,11 @@
   let legendOn = false;
   let firstLoadLegend = true;  // show legend once on first successful render
   let unit = "A";              // "A" or "nm" (display only)
-  let flux = "norm";          // "norm" (normalized), "cgs" (Fν), or "flam" (Fλ)
+  let flux = "norm";           // "norm" (normalized), "cgs" (Fν), or "flam" (Fλ)
 
+  // NEW: wavelength medium state
+  // "vac" = vacuum wavelengths, "air" = air wavelengths (backend will perform conversion)
+  let medium = "vac";
 
   const btnLabels = el("btnLabels");
   const btnLegend = el("btnLegend");
@@ -572,6 +652,11 @@
 
   const btnTellurics = el("btnTellurics");
   const btnRefInf   = el("btnRefInf");
+
+  // Wavelength medium buttons
+  const btnAir = el("btnAir");
+  const btnVac = el("btnVac");
+
   // Jump-to-line buttons
   const btnCaK     = el("btnCaK");
   const btnCaH     = el("btnCaH");
@@ -617,29 +702,27 @@
   function openFb(){ fbModal.style.display = "flex"; }
   function closeFb(){ fbModal.style.display = "none"; }
 
-
-// ---- theme (light/dark) ----
-function applyTheme(t){
-  theme = (t === "dark") ? "dark" : "light";
-  document.documentElement.dataset.theme = theme;
-  try { localStorage.setItem("theme", theme); } catch (e) {}
-  // Button shows the target mode (click to switch)
-  btnTheme.textContent = (theme === "dark") ? "Light" : "Dark";
-  btnTheme.classList.add("active");
-  btnTheme.setAttribute("aria-pressed", "true");
-}
-
-function initTheme(){
-  let saved = null;
-  try { saved = localStorage.getItem("theme"); } catch (e) {}
-  if (saved === "dark" || saved === "light"){
-    applyTheme(saved);
-    return;
+  // ---- theme (light/dark) ----
+  function applyTheme(t){
+    theme = (t === "dark") ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("theme", theme); } catch (e) {}
+    // Button shows the target mode (click to switch)
+    btnTheme.textContent = (theme === "dark") ? "Light" : "Dark";
+    btnTheme.classList.add("active");
+    btnTheme.setAttribute("aria-pressed", "true");
   }
-  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  applyTheme(prefersDark ? "dark" : "light");
-}
 
+  function initTheme(){
+    let saved = null;
+    try { saved = localStorage.getItem("theme"); } catch (e) {}
+    if (saved === "dark" || saved === "light"){
+      applyTheme(saved);
+      return;
+    }
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    applyTheme(prefersDark ? "dark" : "light");
+  }
 
   // Line definitions in Å (used for jump + label/title formatting)
   const LINE_DEFS = [
@@ -745,7 +828,6 @@ function initTheme(){
   function syncUIFromState(){
     const f = factorFromA();
 
-
     // Tellurics button (On/Off)
     btnTellurics.textContent = tellurics ? "On" : "Off";
     btnTellurics.classList.toggle("active", tellurics === 1);
@@ -755,6 +837,9 @@ function initTheme(){
     btnRefInf.textContent = refinf ? "REF∞" : "REF∞";
     btnRefInf.classList.toggle("active", refinf === 1);
     btnRefInf.setAttribute("aria-pressed", refinf ? "true" : "false");
+    // Wavelength medium buttons
+    btnAir.classList.toggle("active", medium === "air");
+    btnVac.classList.toggle("active", medium === "vac");
     centerInput.value = fmt3(centerA * f);
     windowInput.value = fmt3(windowA * f);
     stepInput.value   = fmt3(stepA * f);
@@ -821,6 +906,8 @@ function initTheme(){
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
     u.searchParams.set("theme",  theme);
+    // NEW: wavelength medium
+    u.searchParams.set("medium", medium);
     u.searchParams.set("transparent", "0");
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
@@ -834,6 +921,8 @@ function initTheme(){
     u.searchParams.set("alt",    String(alt));
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
+    // NEW: wavelength medium
+    u.searchParams.set("medium", medium);
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
@@ -849,7 +938,7 @@ function initTheme(){
       `center=${(centerA*f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}  ` +
       `start=${(startA*f).toFixed(3)}  end=${(endA*f).toFixed(3)}  ` +
       `width=${(widthA*f).toFixed(3)}  step=${(stepA*f).toFixed(3)}\n` +
-      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  flux=${flux}  ` +
+      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  flux=${flux}  medium=${medium}\n` +
       `labels=${labelsOn?1:0}  legend=${(firstLoadLegend||legendOn)?1:0}`;
 
     const url = buildUrl();
@@ -876,6 +965,8 @@ function initTheme(){
   }
 
   function gotoLine_A(lamA){
+    // NOTE: when backend implements medium conversion, we will want to map
+    // line centers to the selected medium. For now we keep internal state in Å.
     centerA = clamp(lamA, WMIN_A, WMAX_A);
     recalcWindowFromCenter();
     syncUIFromState();
@@ -895,6 +986,8 @@ function initTheme(){
     u.searchParams.set("tellurics", String(tellurics));
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
+    // NEW: wavelength medium
+    u.searchParams.set("medium", medium);
     u.searchParams.set("x",      xDisp.toFixed(6));
     u.searchParams.set("_", String(Date.now()));
     const resp = await fetch(u.toString(), { cache: "no-store" });
@@ -942,7 +1035,8 @@ function initTheme(){
   }
   img.addEventListener("mousemove", updateHover);
   img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
-// ---- display ----
+
+  // ---- display ----
   btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; btnLabels.classList.toggle("active", labelsOn); render(); });
   btnLegend.addEventListener("click", () => { legendOn = !legendOn; btnLegend.classList.toggle("active", legendOn); render(); });
   btnUnit.addEventListener("click", () => {
@@ -953,6 +1047,18 @@ function initTheme(){
 
   btnTheme.addEventListener("click", () => {
     applyTheme((theme === "dark") ? "light" : "dark");
+    render();
+  });
+  // Wavelength medium
+  btnAir.addEventListener("click", () => {
+    medium = "air";
+    syncUIFromState();
+    render();
+  });
+
+  btnVac.addEventListener("click", () => {
+    medium = "vac";
+    syncUIFromState();
     render();
   });
 
@@ -989,7 +1095,7 @@ function initTheme(){
       const f = factorFromA();
       const startDisp = (startA * f).toFixed(3);
       const endDisp   = (endA   * f).toFixed(3);
-      a.download = `atlas_${startDisp}-${endDisp}_${unitLbl}_R${(r500>=1e8?"inf":Math.round(r500))}_alt${alt}.png`;
+      a.download = `atlas_${startDisp}-${endDisp}_${unitLbl}_R${(r500>=1e8?"inf":Math.round(r500))}_alt${alt}_med${medium}.png`;
 
       a.href = URL.createObjectURL(blob);
       document.body.appendChild(a);
@@ -1038,8 +1144,9 @@ function initTheme(){
   ackModal.addEventListener("click", (ev) => { if (ev.target === ackModal) closeAck(); });
 
   // Feedback modal
-  btnFeedback.addEventListener("click", () => openFb());
   btnCloseFb.addEventListener("click", () => closeFb());
+  btnFeedback.addEventListener("click", () => openFb());
+  
   fbModal.addEventListener("click", (ev) => { if (ev.target === fbModal) closeFb(); });
 
   btnCopyData.addEventListener("click", async () => {
@@ -1148,6 +1255,9 @@ function initTheme(){
 
   r500 = DEF_R;
   setResolutionButtonActive(btnRinf);
+
+  // default medium
+  medium = "air";
 
   initTheme();
 
