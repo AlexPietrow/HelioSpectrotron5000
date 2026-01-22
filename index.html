@@ -1266,5 +1266,59 @@
   render();
 })();
 </script>
+
+<!-- ===== Loader overlay injected without modifying existing markup ===== -->
+<style>
+#__atlas_loader{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,0.30);
+  z-index:9999;
+}
+#__atlas_loader .bubble{
+  background:#161a22;
+  border:1px solid #2a3140;
+  border-radius:999px;
+  padding:10px 16px;
+  font-size:13px;
+  color:#e6e8ee;
+}
+</style>
+
+<script>
+(function(){
+  const img = document.getElementById("img");
+  if(!img) return;
+
+  const wrap = img.parentElement;
+  if(getComputedStyle(wrap).position === "static"){
+    wrap.style.position = "relative";
+  }
+
+  const loader = document.createElement("div");
+  loader.id = "__atlas_loader";
+  loader.innerHTML = '<div class="bubble">Loading…</div>';
+  wrap.appendChild(loader);
+
+  const show = () => { loader.style.display="flex"; img.style.opacity="0.35"; };
+  const hide = () => { loader.style.display="none"; img.style.opacity="1.0"; };
+
+  const origSet = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,"src").set;
+  Object.defineProperty(img,"src",{
+    set(v){
+      show();
+      origSet.call(this,v);
+    }
+  });
+
+  img.addEventListener("load", hide);
+  img.addEventListener("error", hide);
+})();
+</script>
+<!-- ===== End loader overlay ===== -->
+
 </body>
 </html>
