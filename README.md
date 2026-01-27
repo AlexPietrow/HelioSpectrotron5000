@@ -1,6 +1,6 @@
 # HelioSpectrotron 5000 
 
-HelioSpectrotron~5000 (HS5000) is an interactive solar spectral atlas designed to facilitate direct comparison between high-resolution reference spectra and observations obtained with a wide range of solar spectrographs. The package is based on the Kitt Peak Fourier Transform Spectrometer (FTS) solar atlas and provides continuum-normalized and absolute-intensity representations, curated line identifications, optional telluric transmission, and on-the-fly spectral degradation to user-defined resolving powers.
+The [HelioSpectrotron 5000]{HS5000.vo.aip.de} (HS5000) is an interactive solar spectral atlas designed to facilitate direct comparison between high-resolution reference spectra and observations obtained with a wide range of solar spectrographs. The package is based on the Kitt Peak Fourier Transform Spectrometer (FTS) solar atlas and provides continuum-normalized and absolute-intensity representations, curated line identifications, optional telluric transmission, and on-the-fly spectral degradation to user-defined resolving powers.
 
 HS5000 is intended for wavelength calibration, line identification, and resolution matching of solar spectra, and supports both professional and advanced amateur use cases. The framework allows spectra to be exported as numerical arrays for quantitative analysis and comparison with observations from slit-based and imaging spectrographs.
 
