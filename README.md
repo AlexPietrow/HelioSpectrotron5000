@@ -30,3 +30,10 @@ A dedicated reference paper describing HS5000 is currently in preparation.
 - Greisen, E. W., et al. (2006), *Astronomy & Astrophysics*, **446**, 747  
   Air–vacuum wavelength conversion conventions  
   https://ui.adsabs.harvard.edu/abs/2006A%26A...446..747G/abstract
+
+## License
+
+This project is licensed under the Apache License, Version 2.0.
+
+See the LICENSE file or:
+https://www.apache.org/licenses/LICENSE-2.0

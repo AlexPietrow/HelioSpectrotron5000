@@ -209,7 +209,7 @@
     }
 
     /* --- feedback + acknowledgments buttons --- */
-    #btnFeedback, #btnAck{
+    #btnFeedback, #btnAck, #btnAbout{
       position:fixed;
       right:12px;
       z-index:9000;
@@ -222,6 +222,8 @@
     }
     #btnFeedback{ bottom:12px; }
     #btnAck{ bottom:56px; } /* sits above acknowledgments */
+    #btnAbout{ bottom:100px; } /* sits above acknowledgments */
+
 
     /* --- acknowledgments modal --- */
     #ackModal{
@@ -256,6 +258,25 @@
     }
     #ackBody a{color:var(--accent);text-decoration:none;}
     #ackBody a:hover{text-decoration:underline;}
+
+
+    /* AIP logo in header */
+    .aip-logo{
+      height:44px;              /* roughly matches title+subtitle block */
+      max-width:100%;
+      object-fit:contain;
+      opacity:0.9;              /* subtle, optional */
+    }
+
+    /* Mobile: stack logo below title if needed */
+    @media (max-width: 600px){
+      .aip-logo{
+        height:36px;
+        margin-top:6px;
+      }
+    }
+
+
   </style>
 </head>
 <body>
@@ -263,12 +284,21 @@
   <div class="card">
 
     <!-- Header -->
-    <div class="row">
+    <div class="row" style="align-items:center;">
       <div>
         <div class="title">HelioSpectrotron 5000</div>
-        <div class="subtitle">Solar atlas with telurics and optional resolution degradation.</div>
+        <div class="subtitle">Explore the solar spectrum, one wavelength at a time.</div>
       </div>
+
+    <a href="https://www.aip.de" target="_blank" rel="noopener noreferrer">
+      <img
+        src="/static/aip-logo.png"
+        alt="Leibniz Institute for Astrophysics Potsdam (AIP)"
+        class="aip-logo"
+      />
+    </a>
     </div>
+
 
     <div class="divider"></div>
 
@@ -400,24 +430,46 @@
   </fieldset>
 
   <!-- Jump to -->
-  <fieldset class="field" style="flex:1;">
-    <legend>Jump to</legend>
-    <div class="jumpRow">
-      <button id="btnCaK"></button>
-      <button id="btnCaH"></button>
-      <button id="btnHbeta"></button>
-      <button id="btnMgB1"></button>
-      <button id="btnHeD3"></button>
-      <button id="btnNaD1"></button>
-      <button id="btnFe6173"></button>
-      <button id="btnFe6302"></button>
-      <button id="btnHalpha"></button>
-      <button id="btnKI7699"></button>
-      <button id="btnCaIIIR"></button>
-      <button id="btnHe10830"></button>
-    </div>
-        <div class="subtitle" style="margin-top:6px;">Frequently used spectral diagnostics.</div>
-  </fieldset>
+<fieldset class="field" style="flex:1;">
+  <legend>Jump to</legend>
+
+  <!-- Dropdown (shown on narrow screens) -->
+  <select id="jumpSelect" style="
+    width:100%;
+    max-width:360px;
+    margin-bottom:6px;
+    height:40px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:var(--btn);
+    color:var(--text);
+    padding:6px 10px;
+    font-size:14px;
+  ">
+    <option value="">Jump to...</option>
+  </select>
+
+  <!-- Button row (shown on wide screens) -->
+  <div class="jumpRow" id="jumpButtons">
+    <button id="btnCaK"></button>
+    <button id="btnCaH"></button>
+    <button id="btnHbeta"></button>
+    <button id="btnMgB1"></button>
+    <button id="btnHeD3"></button>
+    <button id="btnNaD1"></button>
+    <button id="btnFe6173"></button>
+    <button id="btnFe6302"></button>
+    <button id="btnHalpha"></button>
+    <button id="btnKI7699"></button>
+    <button id="btnCaIIIR"></button>
+    <button id="btnHe10830"></button>
+  </div>
+
+  <div class="subtitle" style="margin-top:6px;">
+    Frequently used spectral diagnostics.
+  </div>
+</fieldset>
+
 
 </div>
 
@@ -435,6 +487,7 @@
 </div>
 
 <!-- Feedback + Acknowledgments -->
+<button id="btnAbout" title="About / How it works">Help</button>
 <button id="btnAck" title="Acknowledgments">Acknowledgments</button>
 <button id="btnFeedback" title="Legal Notice & Privacy Policy">Legal Notice &amp; Privacy Policy</button>
 
@@ -496,6 +549,125 @@
   </div>
 </div>
 
+<!-- About / Help Modal -->
+<div id="aboutModal" style="
+  position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.35); z-index:9999; padding:18px;">
+  <div style="
+    width:min(860px, 100%); background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
+      <div style="font-weight:700;">Help</div>
+      <button id="btnCloseAbout" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
+    </div>
+
+    <div style="
+    padding:12px 14px;
+    font-size:14px;
+    line-height:1.45;
+    max-height:70vh;
+    overflow-y:auto;
+    ">
+
+      <p style="margin-top:0;">
+        HelioSpectrotron 5000 is an interactive solar spectral atlas that lets you inspect reference spectra, apply
+        optional spectral-resolution degradation, and overlay telluric transmission for typical observing altitudes.
+      </p>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 12px;">
+        <span class="pill">Black line represents the solar spectrum, the red line represents the telluric spectrum</span>
+        <span class="pill">Tip: press Enter in any input to re-render</span>
+        <span class="pill">Hover the plot to read wavelength + intensity</span>
+        <span class="pill">Use “CSV” to copy wavelength + intensity</span>
+        <span class="pill">Press “Dark” for dark mode</span>
+      </div>
+
+      <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
+        <summary style="cursor:pointer; font-weight:700;">Quick start</summary>
+        <div style="margin-top:8px; color:var(--text);">
+          <ol style="margin:0; padding-left:18px;">
+            <li>Pick a diagnostic via <strong>Jump to</strong>, or type a <strong>Central wavelength</strong> and hit <strong>Go</strong>.</li>
+            <li>Adjust <strong>Window Size</strong> to set how much spectrum you see.</li>
+            <li>Use <strong>Resolution</strong> (20k–200k) to emulate your instrument; choose <strong>∞</strong> for the raw atlas.</li>
+            <li>Toggle <strong>Tellurics</strong> and select <strong>Altitude</strong> to match observing conditions.</li>
+            <li>Export with <strong>PNG</strong> or copy data via <strong>CSV</strong>.</li>
+          </ol>
+        </div>
+      </details>
+
+      <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
+        <summary style="cursor:pointer; font-weight:700;">Controls explained</summary>
+        <div style="margin-top:8px;">
+          <ul style="margin:0; padding-left:18px;">
+            <li><strong>Central wavelength</strong>: recenters the displayed window.</li>
+            <li><strong>Window Size</strong>: total width of the displayed interval.</li>
+            <li><strong>Window Step</strong>: shifts the window left/right by the chosen step size.</li>
+            <li><strong>Labels</strong>: toggles curated line identifications in the plot.</li>
+            <li><strong>Legend</strong>: toggles legend (solar/tellurics/overlays).</li>
+            <li><strong>Å/nm</strong>: display unit toggle (does not change internal sampling).</li>
+            <li><strong>Light/Dark</strong>: theme toggle.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
+        <summary style="cursor:pointer; font-weight:700;">Resolution (R@500nm) and REF∞</summary>
+        <div style="margin-top:8px;">
+          <p style="margin:0 0 8px;">
+            The reference atlas is treated as effectively “infinite resolution”. Choosing a finite
+            resolving power applies spectral broadening to emulate an instrument.
+          </p>
+          <ul style="margin:0; padding-left:18px;">
+            <li><strong>∞</strong>: no degradation.</li>
+            <li><strong>20k–200k</strong>: approximate instrumental broadening.</li>
+            <li><strong>REF∞</strong>: overlays the undegraded reference for direct comparison.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
+        <summary style="cursor:pointer; font-weight:700;">Tellurics, altitude, and Air/Vacuum</summary>
+        <div style="margin-top:8px;">
+          <ul style="margin:0; padding-left:18px;">
+            <li><strong>Tellurics On/Off</strong>: toggles atmospheric transmission overlay.</li>
+            <li><strong>Altitude</strong>: changes expected telluric absorption strength.</li>
+            <li><strong>Air/Vacuum</strong>: selects wavelength convention used for display and backend queries.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
+        <summary style="cursor:pointer; font-weight:700;">Flux modes and export</summary>
+        <div style="margin-top:8px;">
+          <ul style="margin:0; padding-left:18px;">
+            <li><strong>Normalized</strong>: continuum-normalized intensity.</li>
+            <li><strong>Fν / Fλ</strong>: absolute units (as provided by the backend).</li>
+            <li><strong>PNG</strong>: downloads the currently displayed plot.</li>
+            <li><strong>CSV</strong>: opens a modal with wavelength + y values (TSV) for copy/paste.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
+        <summary style="cursor:pointer; font-weight:700;">Common pitfalls</summary>
+        <div style="margin-top:8px;">
+          <ul style="margin:0; padding-left:18px;">
+            <li>If the plot looks “empty”, increase <strong>Window Size</strong> or verify you’re within the atlas wavelength range.</li>
+            <li>If line centers look shifted, confirm <strong>Air/Vacuum</strong> matches your line list or observation.</li>
+            <li>Only a subsection of spectral lines are labeled to avoid overcrowding, and only 60 lines are printed per window. Please refer to the source book, or OCR table on the project Github for a full list.</li>
+            <li>While taken at high altitude, this atlas still contains telluric features that cannot be removed. Red lines overlapping with black lines are how tellurics are identified.</li>
+          </ul>
+        </div>
+      </details>
+
+      <p style="margin:12px 0 0; color:var(--muted); font-size:12px;">
+        This help text describes the UI and processing at a high level. For data sources and citations, see <strong>Acknowledgments</strong>.
+      </p>
+    </div>
+  </div>
+</div>
+
+
 <!-- Acknowledgments Modal -->
 <div id="ackModal">
   <div id="ackCard">
@@ -505,9 +677,12 @@
         <button id="btnCloseAck" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
       </div>
     </div>
-<div id="ackBody">
+<div id="ackBody" style="
+  max-height:70vh;
+  overflow-y:auto;
+">
   <p>
-    This web atlas combines published solar reference spectra, atmospheric transmission modelling,
+    This website combines published solar reference spectra, atmospheric transmission modelling,
     and curated line-identification lists to enable interactive inspection of the solar spectrum.
   </p>
 
@@ -521,11 +696,11 @@
   <p><strong>Data and external resources</strong></p>
   <ul style="margin-top:6px; margin-bottom:10px;">
     <li>
-      <strong>Solar reference atlas:</strong> Neckel &amp; Labs (1984)
+      <strong>Solar reference atlas:</strong> Neckel &amp; Labs (1984) via <a href="https://github.com/ISP-SST/ISPy/tree/master">ISPy</a>
     </li>
     <li>
-      <strong>Telluric transmission:</strong> TAPAS atmospheric transmission service
-      (Bertaux et&nbsp;al.&nbsp;2014)
+      <strong>Telluric transmission:</strong> <a href="https://tapas.aeris-data.fr/en/home/">TAPAS atmospheric transmission service</a>
+      (Bertaux et&nbsp;al.&nbsp;2014) 
     </li>
     <li>
       <strong>Line identifications:</strong> Moore et&nbsp;al.&nbsp;(1966) and
@@ -696,7 +871,13 @@
   const btnFeedback = el("btnFeedback");
   const fbModal     = el("fbModal");
   const btnCloseFb  = el("btnCloseFb");
+  // about/help modal
+  const btnAbout      = el("btnAbout");
+  const aboutModal    = el("aboutModal");
+  const btnCloseAbout = el("btnCloseAbout");
 
+  function openAbout(){ aboutModal.style.display = "flex"; }
+  function closeAbout(){ aboutModal.style.display = "none"; }
   function openAck(){ ackModal.style.display = "flex"; }
   function closeAck(){ ackModal.style.display = "none"; }
   function openFb(){ fbModal.style.display = "flex"; }
@@ -743,6 +924,8 @@
     { el: btnCaIIIR,  name: "Ca II IR", lamA: 8542.090, showLam: false },
     { el: btnHe10830, name: "He I",     lamA: 10830.340, showLam: true },
   ];
+
+
 
   function factorToA() { return (unit === "nm") ? 10.0 : 1.0; }   // displayed -> Å
   function factorFromA(){ return (unit === "nm") ? 0.1 : 1.0; }   // Å -> displayed
@@ -810,6 +993,42 @@
     if (unit === "nm") return `${Math.round(lamA / 10.0)} nm`;
     return `${Math.round(lamA)} Å`;
   }
+
+
+  // --- Jump-to dropdown (responsive) ---
+const jumpSelect = el("jumpSelect");
+
+function populateJumpDropdown(){
+  if (!jumpSelect) return;
+
+  // Keep the first placeholder option, clear the rest
+  while (jumpSelect.options.length > 1) jumpSelect.remove(1);
+
+  for (const d of LINE_DEFS){
+    const opt = document.createElement("option");
+    opt.value = String(d.lamA);
+
+    // Match the button labeling logic
+    if (d.showLam){
+      const lamLabelA = (typeof d.lamLabelA === "number") ? d.lamLabelA : d.lamA;
+      opt.textContent = `${d.name} ${formatLamForLabel(lamLabelA)}`;
+    } else {
+      opt.textContent = d.name;
+    }
+
+    jumpSelect.appendChild(opt);
+  }
+}
+
+if (jumpSelect){
+  jumpSelect.addEventListener("change", () => {
+    const v = parseFloat(jumpSelect.value);
+    if (!isFinite(v)) return;
+    gotoLine_A(v);
+    jumpSelect.value = ""; // reset
+  });
+}
+
 
   function updateLineButtons(){
     for (const d of LINE_DEFS){
@@ -1149,6 +1368,12 @@
   
   fbModal.addEventListener("click", (ev) => { if (ev.target === fbModal) closeFb(); });
 
+  // About modal
+  btnAbout.addEventListener("click", () => openAbout());
+  btnCloseAbout.addEventListener("click", () => closeAbout());
+  aboutModal.addEventListener("click", (ev) => { if (ev.target === aboutModal) closeAbout(); });
+
+
   btnCopyData.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(dataText.value || "");
@@ -1263,6 +1488,7 @@
 
   clampState();
   syncUIFromState();
+  populateJumpDropdown();
   render();
 })();
 </script>
@@ -1286,6 +1512,20 @@
   font-size:13px;
   color:#e6e8ee;
 }
+
+
+/* Jump-to responsive: default = buttons */
+#jumpSelect { display:none; }
+#jumpButtons { display:flex; }
+
+/* Narrow screens: dropdown */
+@media (max-width: 860px){
+  #jumpButtons{ display:none; }
+  #jumpSelect{ display:block; }
+}
+
+
+
 </style>
 
 <script>

@@ -54,6 +54,8 @@ import matplotlib.pyplot as plt
 
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
 
 # ----------------------------
 # CONFIG
@@ -1121,6 +1123,7 @@ def render_segment_png(
 # ----------------------------
 app = FastAPI()
 
+app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
@@ -1389,4 +1392,5 @@ def hover_json(
 
 @app.get("/favicon.svg", include_in_schema=False)
 def favicon():
-    return FileResponse("favicon.svg")
+    return FileResponse(os.path.join(HERE, "favicon.svg"))
+
