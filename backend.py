@@ -831,286 +831,266 @@ def render_segment_png(
     flux: str = "norm",
     theme: str = "light",
     transparent: bool = False,
+    show1d: bool = True,
+    show2d: bool = True,
 ) -> bytes:
-    """Render [start,end] slice (selection in requested medium Å). unit affects plotting only."""
+    """Render [start,end] slice.
+
+    Notes
+    -----
+    - `start`/`end` are interpreted in the requested *medium* (air/vac) in Å.
+    - All internal computation is done in AIR Å to match ISPy + telluric tables.
+    - `unit` only affects plotting.
+    """
     unit = (unit or "A").strip().lower()
     plot_in_nm = unit in ("nm", "nanometer", "nanometers")
 
-
     medium = (medium or "air").strip().lower()
+
     # ISPy atlas wavelengths are in AIR Å; convert request bounds to AIR for internal slicing
     start_air, end_air = to_air_bounds(start, end, medium)
 
     flux = (flux or "norm").strip().lower()
-    plot_cgs = (flux != "norm")
-
     theme_dict = _pick_theme(theme)
 
-    # Fetch data
+    # Fetch solar spectrum (AIR Å)
     if flux == "norm":
-        w, y_base = fetch_ispy_air_norm(start_air, end_air)
+        w_air, y_base = fetch_ispy_air_norm(start_air, end_air)
     elif flux == "cgs":
-        w, y_base = fetch_ispy_air_cgs_fnu(start_air, end_air)
+        w_air, y_base = fetch_ispy_air_cgs_fnu(start_air, end_air)
     elif flux == "flam":
-        w, y_base = fetch_ispy_air_cgs_flam(start_air, end_air)
+        w_air, y_base = fetch_ispy_air_cgs_flam(start_air, end_air)
     else:
-        w, y_base = fetch_ispy_air_norm(start_air, end_air)
+        w_air, y_base = fetch_ispy_air_norm(start_air, end_air)
 
-    # Figure
-    fig, (ax1, ax2) = plt.subplots(
-        nrows=2,
-        figsize=(12, 4.8),
-        gridspec_kw={"height_ratios": [2, 1]},
-        constrained_layout=True,
-    )
+    show1d = bool(show1d)
+    show2d = bool(show2d)
+    if (not show1d) and (not show2d):
+        show1d = True  # safety
 
-    # Backgrounds
+    # Figure layout
+    if show1d and show2d:
+        fig, (ax1, ax2) = plt.subplots(
+            nrows=2,
+            figsize=(12, 4.8),
+            gridspec_kw={"height_ratios": [2, 1]},
+            constrained_layout=True,
+        )
+    elif show1d and (not show2d):
+        fig, ax1 = plt.subplots(nrows=1, figsize=(12, 3.2), constrained_layout=True)
+        ax2 = None
+    else:
+        fig, ax2 = plt.subplots(nrows=1, figsize=(12, 2.2), constrained_layout=True)
+        ax1 = None
+
+    # Background + axes styling
     fig.patch.set_facecolor(theme_dict["bg"])
-    ax1.set_facecolor(theme_dict["panel"])
-    ax2.set_facecolor(theme_dict["panel"])
+    if ax1 is not None:
+        _style_axes(ax1, theme_dict)
+    if ax2 is not None:
+        _style_axes(ax2, theme_dict)
 
-    _style_axes(ax1, theme_dict)
-    _style_axes(ax2, theme_dict)
+    # Empty slice safety
+    if w_air.size == 0:
+        if ax1 is not None:
+            ax1.text(0.5, 0.5, "Empty slice", ha="center", va="center",
+                     transform=ax1.transAxes, color=theme_dict["text"])
+            ax1.axis("off")
+        if ax2 is not None:
+            ax2.text(0.5, 0.5, "Empty slice", ha="center", va="center",
+                     transform=ax2.transAxes, color=theme_dict["text"])
+            ax2.axis("off")
 
-    if w.size == 0:
-        ax1.text(0.5, 0.5, "Empty slice", ha="center", va="center",
-                 transform=ax1.transAxes, color=theme_dict["text"])
-        ax1.axis("off")
-        ax2.axis("off")
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
         plt.close(fig)
         gc.collect()
         return buf.getvalue()
 
+    # Tellurics (AIR Å)
     twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
+    t_seg = np.interp(w_air, twav, tint)
 
-    # Interpolate tellurics onto atlas wavelength cut
-    t_seg = np.interp(w, twav, tint)
-
-    # Toggle telluric application/overlay
     if not tellurics_on:
         t_seg = np.ones_like(t_seg)
-        tint_for_display = np.ones_like(w)
+        tint_for_display = np.ones_like(w_air)
     else:
         tint_for_display = t_seg
 
     # ---- PHYSICALLY CORRECT ORDER ----
     y_highres = np.asarray(y_base * t_seg, dtype=float)
-    y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
-    y_ref     = y_highres
-    t_disp    = np.asarray(apply_resolution_R500(w, tint_for_display, R500), dtype=float)
+    y_final = np.asarray(apply_resolution_R500(w_air, y_highres, R500), dtype=float)
+    y_ref = y_highres  # "∞" reference (only meaningful if R500 is finite)
+    t_disp = np.asarray(apply_resolution_R500(w_air, tint_for_display, R500), dtype=float)
 
-    # Convert wavelengths for display medium (AIR->(AIR/VAC)); internal calculations remain in AIR Å
-    w_disp = air_to_medium_A(w, medium)
-
-    # Convert plotting units
-    w_plot     = (w_disp / 10.0) if plot_in_nm else w_disp
+    # Convert wavelengths for display medium (AIR -> AIR/VAC)
+    w_disp_A = air_to_medium_A(w_air, medium)
+    w_plot = (w_disp_A / 10.0) if plot_in_nm else w_disp_A
     start_plot = (start / 10.0) if plot_in_nm else start
-    end_plot   = (end / 10.0) if plot_in_nm else end
+    end_plot = (end / 10.0) if plot_in_nm else end
     unit_label = "nm" if plot_in_nm else "Å"
-
-    ax1.set_xlim(start_plot, end_plot)
 
     # Colors
     spec_col = theme_dict["spec"]
-    ref_col  = theme_dict["ref"]
+    ref_col = theme_dict["ref"]
     tell_col = theme_dict["tell"]
 
-    # Plot spectrum + tellurics
-    if plot_cgs:
-        if refinf_on and (np.isfinite(R500) and R500 < 1e8):
-            ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
-                     label="REF ∞" if legend_on else None)
-        ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
-                 label="Spectrum" if legend_on else None)
+    # --- 1D panel ---
+    if ax1 is not None:
+        ax1.set_xlim(start_plot, end_plot)
 
-        # Robust continuum estimate only for axis scaling
-        y_cont = float(np.nanpercentile(y_final, 99.0)) if y_final.size else 1.0
-        if not np.isfinite(y_cont) or y_cont <= 0:
-            y_cont = float(np.nanmax(y_final)) if np.isfinite(np.nanmax(y_final)) else 1.0
-        if y_cont <= 0:
-            y_cont = 1.0
+        if flux in ("cgs", "flam"):
+            # Optional reference overlay
+            if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+                ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
+                         label="REF ∞" if legend_on else None)
 
-        headroom = 1.20
-        ax1.set_ylim(0, headroom * y_cont)
+            ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
+                     label="Spectrum" if legend_on else None)
 
-        # Tellurics overlay on RHS
-        axT = None
-        if tellurics_on:
-            axT = ax1.twinx()
-            axT.set_facecolor("none")  # avoid overlay panel block
-            for s in axT.spines.values():
-                s.set_color(theme_dict["border"])
-            axT.tick_params(colors=theme_dict["text"], which="both")
-            axT.yaxis.label.set_color(theme_dict["text"])
-            axT.set_ylim(0, headroom)
-            axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
-                     label="Tellurics" if legend_on else None)
-            axT.set_ylabel("Telluric transmission")
-            axT.grid(False)
+            # y-limits based on percentile
+            y_cont = float(np.nanpercentile(y_final, 99.0)) if y_final.size else 1.0
+            if not np.isfinite(y_cont) or y_cont <= 0:
+                y_cont = float(np.nanmax(y_final)) if np.isfinite(np.nanmax(y_final)) else 1.0
+            if y_cont <= 0:
+                y_cont = 1.0
+            headroom = 1.20
+            ax1.set_ylim(0, headroom * y_cont)
 
-        ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam"
-                       else "Intensity (cgs per Hz)" if flux == "cgs"
-                       else "Intensity (cgs)")
+            axT = None
+            if tellurics_on:
+                axT = ax1.twinx()
+                axT.set_facecolor("none")
+                for s in axT.spines.values():
+                    s.set_color(theme_dict["border"])
+                axT.tick_params(colors=theme_dict["text"], which="both")
+                axT.yaxis.label.set_color(theme_dict["text"])
+                axT.set_ylim(0, headroom)
+                axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
+                         label="Tellurics" if legend_on else None)
+                axT.set_ylabel("Telluric transmission")
+                axT.grid(False)
 
-        if legend_on:
-            handles, labels = ax1.get_legend_handles_labels()
-            if tellurics_on and axT is not None:
-                h2, l2 = axT.get_legend_handles_labels()
-                handles += h2
-                labels  += l2
-            leg = ax1.legend(handles, labels, loc="upper right", frameon=True, fontsize=10)
-            _style_legend(leg, theme_dict)
+            ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam" else "Intensity (cgs per Hz)")
 
-    else:
-        if tellurics_on:
-            ax1.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
-                     label="Tellurics" if legend_on else None)
-        if refinf_on and (np.isfinite(R500) and R500 < 1e8):
-            ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
-                     label="REF ∞" if legend_on else None)
-        ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
-                 label="Spectrum" if legend_on else None)
+            if legend_on:
+                handles, labs = ax1.get_legend_handles_labels()
+                if tellurics_on and axT is not None:
+                    h2, l2 = axT.get_legend_handles_labels()
+                    handles += h2
+                    labs += l2
+                leg = ax1.legend(handles, labs, loc="upper right", frameon=True, fontsize=10)
+                _style_legend(leg, theme_dict)
 
-        ax1.set_ylim(0, 1.20)
-        ax1.set_ylabel("Normalized intensity")
+        else:
+            # Normalized: plot tellurics in same axis for simplicity
+            if tellurics_on:
+                ax1.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
+                         label="Tellurics" if legend_on else None)
 
-        if legend_on:
-            leg = ax1.legend(loc="upper right", frameon=True, fontsize=10)
-            _style_legend(leg, theme_dict)
+            if refinf_on and (np.isfinite(R500) and R500 < 1e8):
+                ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
+                         label="REF ∞" if legend_on else None)
 
-    r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
-    ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, flux={flux})")
+            ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
+                     label="Spectrum" if legend_on else None)
 
-    # ----------------------------
-    # Line overlays (gated by labels_on)
-    # ----------------------------
-    if labels_on:
-        MAX_LABELS = 60
+            ax1.set_ylim(0, 1.20)
+            ax1.set_ylabel("Normalized intensity")
 
-        # ----------------------------
-        # Moore list (no strength, no forced)
-        # ----------------------------
-        if old_wav is not None and old_ids is not None:
+            if legend_on:
+                leg = ax1.legend(loc="upper right", frameon=True, fontsize=10)
+                _style_legend(leg, theme_dict)
 
-            moore_wav_med = (
-                air_to_vac_A(old_wav)
-                if medium in ("vac", "vacuum")
-                else old_wav
-            )
+        r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
+        ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, flux={flux})")
 
-            # Defensive: keep forced aligned
-            if old_forced is None or len(old_forced) != len(old_wav):
-                print(f"[WARN] Moore forced length mismatch: forced={0 if old_forced is None else len(old_forced)} wav={len(old_wav)}; disabling forcing for Moore", flush=True)
-                moore_forced = None
-            else:
-                moore_forced = old_forced
+        if ax2 is None:
+            ax1.set_xlabel(f"Wavelength [{unit_label}]")
 
-            pw_moore, _, pi_moore = select_labels_windowed_binned(
-                moore_wav_med,
-                strength=None,
-                labels=old_ids,
-                forced=moore_forced,
-                start_A=start,
-                end_A=end,
-                bin_A=0.8,
-                max_labels=MAX_LABELS,
-            )
+        # ---- Line overlays (only on ax1) ----
+        if labels_on:
+            MAX_LABELS = 60
 
+            # Moore list
+            if old_wav is not None and old_ids is not None:
+                moore_wav_med = air_to_vac_A(old_wav) if medium in ("vac", "vacuum") else old_wav
+                moore_forced = old_forced if (old_forced is not None and len(old_forced) == len(old_wav)) else None
 
-            for x_med, lab in zip(pw_moore, pi_moore):
-                x_plot = (x_med / 10.0) if plot_in_nm else x_med
-                ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4,
-                            alpha=0.5, zorder=0, color=spec_col)
-                ax1.text(
-                    x_plot, 0.84, lab,
-                    transform=ax1.get_xaxis_transform(),
-                    rotation=45,
-                    fontsize=8,
-                    ha="center",
-                    va="bottom",
-                    color=spec_col,
+                pw_moore, _, pi_moore = select_labels_windowed_binned(
+                    moore_wav_med,
+                    strength=None,
+                    labels=old_ids,
+                    forced=moore_forced,
+                    start_A=start,
+                    end_A=end,
+                    bin_A=0.8,
+                    max_labels=MAX_LABELS,
                 )
+                for x_med, lab in zip(pw_moore, pi_moore):
+                    x_plot = (x_med / 10.0) if plot_in_nm else x_med
+                    ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
+                    ax1.text(
+                        x_plot, 0.84, lab,
+                        transform=ax1.get_xaxis_transform(),
+                        rotation=45, fontsize=8,
+                        ha="center", va="bottom",
+                        color=spec_col,
+                    )
 
-        # ----------------------------
-        # IA / strength list (with forced flags)
-        # ----------------------------
-        if (
-            new_wav is not None
-            and new_ids is not None
-            and new_strength is not None
-            and new_forced is not None
-        ):
+            # IA / strength list
+            if new_wav is not None and new_ids is not None and new_strength is not None and new_forced is not None:
+                ia_wav_med = air_to_vac_A(new_wav) if medium in ("vac", "vacuum") else new_wav
+                ia_forced = new_forced if (new_forced is not None and len(new_forced) == len(new_wav)) else None
 
-            ia_wav_med = (
-                air_to_vac_A(new_wav)
-                if medium in ("vac", "vacuum")
-                else new_wav
-            )
-
-            # Defensive: keep forced aligned
-            if new_forced is None or len(new_forced) != len(new_wav):
-                print(f"[WARN] IA forced length mismatch: forced={0 if new_forced is None else len(new_forced)} wav={len(new_wav)}; disabling forcing for IA", flush=True)
-                ia_forced = None
-            else:
-                ia_forced = new_forced
-
-            pw_ia, _, pi_ia = select_labels_windowed_binned(
-                ia_wav_med,
-                new_strength,
-                new_ids,
-                ia_forced,
-                start_A=start,
-                end_A=end,
-                bin_A=0.8,
-                max_labels=MAX_LABELS,
-            )
-
-            for x_med, lab in zip(pw_ia, pi_ia):
-                x_plot = (x_med / 10.0) if plot_in_nm else x_med
-                ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4,
-                            alpha=0.5, zorder=0, color=spec_col)
-                ax1.text(
-                    x_plot, 0.84, lab,
-                    transform=ax1.get_xaxis_transform(),
-                    rotation=45,
-                    fontsize=8,
-                    ha="center",
-                    va="bottom",
-                    color=spec_col,
+                pw_ia, _, pi_ia = select_labels_windowed_binned(
+                    ia_wav_med,
+                    new_strength,
+                    new_ids,
+                    ia_forced,
+                    start_A=start,
+                    end_A=end,
+                    bin_A=0.8,
+                    max_labels=MAX_LABELS,
                 )
+                for x_med, lab in zip(pw_ia, pi_ia):
+                    x_plot = (x_med / 10.0) if plot_in_nm else x_med
+                    ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
+                    ax1.text(
+                        x_plot, 0.84, lab,
+                        transform=ax1.get_xaxis_transform(),
+                        rotation=45, fontsize=8,
+                        ha="center", va="bottom",
+                        color=spec_col,
+                    )
 
+    # --- 2D panel ---
+    if ax2 is not None:
+        y_strip = np.asarray(y_final, dtype=float)
 
+        p1 = float(np.nanpercentile(y_strip, 1))
+        p99 = float(np.nanpercentile(y_strip, 99))
+        if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
+            p1, p99 = float(np.nanmin(y_strip)), float(np.nanmax(y_strip))
+        if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
+            p1, p99 = 0.0, 1.0
 
-    # ----------------------------
-    # 2D strip: STRICTLY from y_final (after all processing)
-    # ----------------------------
-    y_strip = np.asarray(y_final, dtype=float)
-    p1 = float(np.nanpercentile(y_strip, 1))
-    p99 = float(np.nanpercentile(y_strip, 99))
-    if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
-        p1, p99 = float(np.nanmin(y_strip)), float(np.nanmax(y_strip))
-    if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
-        p1, p99 = 0.0, 1.0
+        y_strip_n = (y_strip - p1) / (p99 - p1) if (p99 > p1) else y_strip * 0.0
+        y_strip_n = np.clip(y_strip_n, 0.0, 1.0)
 
-    y_strip_n = (y_strip - p1) / (p99 - p1) if (p99 > p1) else y_strip * 0.0
-    y_strip_n = np.clip(y_strip_n, 0.0, 1.0)
-
-    img2d = np.tile(y_strip_n[np.newaxis, :], (REPEAT_2D, 1))
-    ax2.imshow(
-        img2d,
-        aspect="auto",
-        origin="lower",
-        interpolation="nearest",
-        cmap="gray",
-        extent=[w_plot[0], w_plot[-1], 0, 1.0],
-    )
-    ax2.set_xlim(start_plot, end_plot)
-    ax2.set_xlabel(f"Wavelength [{unit_label}]")
-    ax2.set_yticks([])
-    ax2.xaxis.label.set_color(theme_dict["text"])
-    ax2.tick_params(colors=theme_dict["text"], which="both")
+        img2d = np.tile(y_strip_n[np.newaxis, :], (REPEAT_2D, 1))
+        ax2.imshow(
+            img2d,
+            aspect="auto",
+            origin="lower",
+            interpolation="nearest",
+            cmap="gray",
+            extent=[w_plot[0], w_plot[-1], 0, 1.0],
+        )
+        ax2.set_xlim(start_plot, end_plot)
+        ax2.set_xlabel(f"Wavelength [{unit_label}]")
+        ax2.set_yticks([])
+        ax2.tick_params(colors=theme_dict["text"], which="both")
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
@@ -1182,6 +1162,8 @@ def segment_png(
     flux: Optional[str] = "norm",   # 'norm' or 'cgs' or 'flam'
     theme: Optional[str] = "light", # 'light'|'dark'|'auto'
     transparent: Optional[int] = 0, # 0/1
+    show1d: Optional[int] = 1,      # 0/1
+    show2d: Optional[int] = 1,      # 0/1
 ):
     try:
         start = float(start)
@@ -1215,6 +1197,8 @@ def segment_png(
             flux=flux,
             theme=theme,
             transparent=transparent_on,
+            show1d=bool(int(show1d)) if show1d is not None else True,
+            show2d=bool(int(show2d)) if show2d is not None else True,
         )
         return Response(
             content=png,
@@ -1375,7 +1359,7 @@ def hover_json(
         y_highres = np.asarray(y_base * t_seg, dtype=float)
         y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
 
-        if not (w[0] <= x_A <= w[-1]):
+        if not (w[0] <= x_air <= w[-1]):
             return JSONResponse(
                 {"ok": True, "unit": unit_label, "x": x, "y": None, "note": "x out of slice"},
                 status_code=200,

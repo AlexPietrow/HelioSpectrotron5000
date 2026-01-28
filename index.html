@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=1180, initial-scale=1" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
   <title>Heliospectrotron 5000</title>
 
@@ -208,21 +208,6 @@
       border-radius:10px;
     }
 
-    /* --- feedback + acknowledgments buttons --- */
-    #btnFeedback, #btnAck, #btnAbout{
-      position:fixed;
-      right:12px;
-      z-index:9000;
-      font-size:13px;
-      padding:8px 12px;
-      height:auto;
-      border-radius:12px;
-      box-shadow:0 6px 18px rgba(0,0,0,0.12);
-      background:var(--btn);
-    }
-    #btnFeedback{ bottom:12px; }
-    #btnAck{ bottom:66px; } /* sits above acknowledgments */
-    #btnAbout{ bottom:105px; } /* sits above acknowledgments */
 
 
     /* --- acknowledgments modal --- */
@@ -277,7 +262,26 @@
     }
 
 
-  </style>
+  
+
+/* Header actions (Help / Acknowledgments / Legal) */
+.headerActions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.headerActions button{
+  height:34px;
+  padding:6px 10px;
+  font-size:13px;
+  border-radius:10px;
+  box-shadow:none;
+  white-space:nowrap;
+}
+.headerActions #btnFeedback br{ display:none; } /* prevent 2-line label in header */
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -289,6 +293,13 @@
         <div class="title">HelioSpectrotron 5000</div>
         <div class="subtitle">Explore the solar spectrum, one wavelength at a time.</div>
       </div>
+
+<div class="headerActions">
+  <button id="btnAbout" title="About / How it works">Help</button>
+  <button id="btnAck" title="Acknowledgments">Acknowledgments</button>
+  <button id="btnFeedback" title="Legal Notice & Privacy Policy">Legal Notice &amp; Privacy Policy</button>
+</div>
+
 
     <a href="https://www.aip.de" target="_blank" rel="noopener noreferrer">
       <img
@@ -332,7 +343,6 @@
       <fieldset class="field">
         <legend>Window Step</legend>
         <div class="group">
-          <span class="label">Step size</span>
           <input id="stepInput" class="narrowTiny" type="number" step="0.001" />
           <span class="label">(<span id="unitTextS">Å</span>)</span>
           <div class="seg">
@@ -348,6 +358,8 @@
         <div class="seg">
           <button id="btnLabels" class="active" title="Toggle line labels">Labels</button>
           <button id="btnLegend" title="Toggle legend">Legend</button>
+          <button id="btnShow1D" class="active" title="Toggle 1D spectrum panel">1D</button>
+          <button id="btnShow2D" class="active" title="Toggle 2D spectrum panel">2D</button>
           <button id="btnUnit" title="Toggle plotting unit">Å</button>
           <button id="btnTheme" title="Toggle light/dark">Dark</button>
         </div>
@@ -485,12 +497,6 @@
 
   </div>
 </div>
-
-<!-- Feedback + Acknowledgments -->
-<button id="btnAbout" title="About / How it works">Help</button>
-<button id="btnAck" title="Acknowledgments">Acknowledgments</button>
-<button id="btnFeedback" title="Legal Notice & Privacy Policy">Legal Notice <br>&amp; Privacy Policy</button>
-
 
 <!-- Feedback Modal (simple) -->
 <div id="fbModal" style="
@@ -695,6 +701,7 @@
   (<a href="https://github.com/AlexPietrow/HelioSpectrotron5000"
       target="_blank" rel="noopener noreferrer">code repository</a>)
 </p>
+<p>For feedback and suggestions, please email apietrow@aip.de.</p>
 
 
 
@@ -776,6 +783,8 @@
   let stepA = DEF_S_A;         // step size (Å)
   let tellurics = 1;   // 1 = plotted, 0 = hidden
   let refinf = 0;      // 1 = overlay REF∞ (unconvolved), 0 = off
+  let show1d = 1;      // 1 = show 1D panel
+  let show2d = 1;      // 1 = show 2D panel
   // Window: store the ACTUAL displayed base window in Å (already includes multiplier)
   let windowA = DEF_W_A;       // (Å) actual window value shown in input
   let windowMult = 1;          // ×1, ×2, ×5 (UI only; applied by updating windowA)
@@ -792,6 +801,11 @@
   let unit = "A";              // "A" or "nm" (display only)
   let flux = "norm";           // "norm" (normalized), "cgs" (Fν), or "flam" (Fλ)
 
+
+  // If true, the initial window came from URL params (start/width)
+  let hasUrlWindow = false;
+  // While true, the first render will use URL-provided (start,width) without being overwritten by UI inputs
+  let urlLockWindow = false;
   // NEW: wavelength medium state
   // "vac" = vacuum wavelengths, "air" = air wavelengths (backend will perform conversion)
   let medium = "vac";
@@ -800,6 +814,8 @@
   const btnLegend = el("btnLegend");
   const btnUnit   = el("btnUnit");
   const btnTheme  = el("btnTheme");
+  const btnShow1D = el("btnShow1D");
+  const btnShow2D = el("btnShow2D");
 
   let theme = "light";
   const btnFluxNorm = el("btnFluxNorm");
@@ -833,7 +849,13 @@
   const btnTellurics = el("btnTellurics");
   const btnRefInf   = el("btnRefInf");
 
-  // Wavelength medium buttons
+      // Panel buttons
+    btnShow1D.classList.toggle("active", show1d === 1);
+    btnShow2D.classList.toggle("active", show2d === 1);
+    btnShow1D.setAttribute("aria-pressed", show1d ? "true" : "false");
+    btnShow2D.setAttribute("aria-pressed", show2d ? "true" : "false");
+
+// Wavelength medium buttons
   const btnAir = el("btnAir");
   const btnVac = el("btnVac");
 
@@ -1061,7 +1083,13 @@ if (jumpSelect){
     btnRefInf.textContent = refinf ? "REF∞" : "REF∞";
     btnRefInf.classList.toggle("active", refinf === 1);
     btnRefInf.setAttribute("aria-pressed", refinf ? "true" : "false");
-    // Wavelength medium buttons
+        // Panel buttons
+    btnShow1D.classList.toggle("active", show1d === 1);
+    btnShow2D.classList.toggle("active", show2d === 1);
+    btnShow1D.setAttribute("aria-pressed", show1d ? "true" : "false");
+    btnShow2D.setAttribute("aria-pressed", show2d ? "true" : "false");
+
+// Wavelength medium buttons
     btnAir.classList.toggle("active", medium === "air");
     btnVac.classList.toggle("active", medium === "vac");
     centerInput.value = fmt3(centerA * f);
@@ -1093,6 +1121,7 @@ if (jumpSelect){
     rangePill.textContent = `range: ${startDisp.toFixed(3)}–${endDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
 
     updateLineButtons();
+    populateJumpDropdown();
   }
 
   function readUIToState(){
@@ -1132,6 +1161,8 @@ if (jumpSelect){
     u.searchParams.set("theme",  theme);
     // NEW: wavelength medium
     u.searchParams.set("medium", medium);
+    u.searchParams.set("show1d", String(show1d));
+    u.searchParams.set("show2d", String(show2d));
     u.searchParams.set("transparent", "0");
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
@@ -1147,12 +1178,130 @@ if (jumpSelect){
     u.searchParams.set("flux",   flux);
     // NEW: wavelength medium
     u.searchParams.set("medium", medium);
+  u.searchParams.set("show1d", String(show1d));
+  u.searchParams.set("show2d", String(show2d));
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
 
+// ---- shareable URL (reflect current state in the page URL) ----
+function buildShareUrl(){
+  const u = new URL(window.location.href);
+
+  u.searchParams.set("start",  startA.toFixed(6));
+  u.searchParams.set("width",  widthA.toFixed(6));
+  u.searchParams.set("R500",   r500.toFixed(6));
+  u.searchParams.set("alt",    String(alt));
+  u.searchParams.set("labels", labelsOn ? "1" : "0");
+  u.searchParams.set("legend", legendOn ? "1" : "0");
+  u.searchParams.set("tellurics", String(tellurics));
+  u.searchParams.set("refinf", String(refinf));
+  u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+  u.searchParams.set("flux",   flux);
+  u.searchParams.set("theme",  theme);
+  u.searchParams.set("medium", medium);
+  u.searchParams.set("show1d", String(show1d));
+  u.searchParams.set("show2d", String(show2d));
+
+  // Convenience (nice for restoring UI feel)
+  u.searchParams.set("center", centerA.toFixed(6));
+  u.searchParams.set("step",   stepA.toFixed(6));
+  u.searchParams.set("window", windowA.toFixed(6));
+  u.searchParams.set("winmult", String(windowMult));
+
+  // Never include cache-busters in share URLs
+  u.searchParams.delete("_");
+  return u;
+}
+
+function syncUrlFromState(){
+  const u = buildShareUrl();
+  history.replaceState(null, "", u.toString());
+}
+
+function applyStateFromUrl(){
+  const q = new URLSearchParams(window.location.search);
+
+  function getNum(key){
+    const v = parseFloat(q.get(key));
+    return isFinite(v) ? v : null;
+  }
+  function getInt(key){
+    const v = parseInt(q.get(key), 10);
+    return Number.isFinite(v) ? v : null;
+  }
+  function getStr(key){
+    const v = q.get(key);
+    return (v !== null && v !== "") ? v : null;
+  }
+
+  const s   = getNum("start");
+  const w   = getNum("width");
+  const R   = getNum("R500");
+  const a   = getInt("alt");
+  const lab = getInt("labels");
+  const leg = getInt("legend");
+  const tel = getInt("tellurics");
+  const ref = getInt("refinf");
+  const un  = getStr("unit");
+  const fl  = getStr("flux");
+  const th  = getStr("theme");
+  const med = getStr("medium");
+  const s1 = getInt("show1d");
+  const s2 = getInt("show2d");
+
+  // Apply render state
+  if (R !== null && R > 0) r500 = R;
+  if (a !== null) setAltitude(a);
+
+  if (lab !== null) labelsOn = (lab === 1);
+  if (leg !== null) legendOn = (leg === 1);
+  if (tel !== null) tellurics = (tel === 1) ? 1 : 0;
+  if (ref !== null) refinf = (ref === 1) ? 1 : 0;
+
+  if (un === "nm" || un === "A") unit = (un === "nm") ? "nm" : "A";
+  if (fl === "norm" || fl === "cgs" || fl === "flam") flux = fl;
+  if (med === "air" || med === "vac") medium = med;
+
+  if (s1 !== null) show1d = (s1 === 1) ? 1 : 0;
+  if (s2 !== null) show2d = (s2 === 1) ? 1 : 0;
+  if (!show1d && !show2d){ show1d = 1; }
+
+  // Theme from URL should override local preference
+  if (th === "dark" || th === "light") applyTheme(th);
+
+  // Optional UI convenience
+  const c   = getNum("center");
+  const st  = getNum("step");
+  const win = getNum("window");
+  const wm  = getInt("winmult");
+
+  if (c !== null) centerA = c;
+  if (st !== null) stepA = st;
+  if (win !== null) windowA = win;
+  if (wm === 1 || wm === 2 || wm === 5) windowMult = wm;
+
+  // If start/width are provided, prioritize those for the initial view
+  if (s !== null && w !== null){
+    hasUrlWindow = true;
+    startA = s;
+    widthA = w;
+    urlLockWindow = true;
+
+    // Keep center/window consistent with start/width
+    widthA = Math.max(0.1, widthA);
+    centerA = startA + 0.5 * widthA;
+    windowA = widthA;
+  }
+}
+
+
   function render(){
-    readUIToState();
+    // If the initial state came from URL (start/width), do not overwrite it with UI inputs on first render
+    if (!urlLockWindow) {
+      readUIToState();
+      hasUrlWindow = false;
+    }
     syncUIFromState();
 
     const f = factorFromA();
@@ -1186,9 +1335,16 @@ if (jumpSelect){
     };
 
     img.src = url;
-  }
 
+    // Keep page URL in sync so this view can be shared
+    syncUrlFromState();
+
+    // After the first render, allow UI inputs to drive the window as usual
+    urlLockWindow = false;
+  }
   function gotoLine_A(lamA){
+    hasUrlWindow = false;
+    urlLockWindow = false;
     // NOTE: when backend implements medium conversion, we will want to map
     // line centers to the selected medium. For now we keep internal state in Å.
     centerA = clamp(lamA, WMIN_A, WMAX_A);
@@ -1212,6 +1368,8 @@ if (jumpSelect){
     u.searchParams.set("flux",   flux);
     // NEW: wavelength medium
     u.searchParams.set("medium", medium);
+  u.searchParams.set("show1d", String(show1d));
+  u.searchParams.set("show2d", String(show2d));
     u.searchParams.set("x",      xDisp.toFixed(6));
     u.searchParams.set("_", String(Date.now()));
     const resp = await fetch(u.toString(), { cache: "no-store" });
@@ -1259,6 +1417,20 @@ if (jumpSelect){
   }
   img.addEventListener("mousemove", updateHover);
   img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
+
+  // ---- panel toggles ----
+  btnShow1D.addEventListener("click", () => {
+    show1d = show1d ? 0 : 1;
+    if (!show1d && !show2d) show2d = 1;  // keep at least one
+    syncUIFromState();
+    render();
+  });
+  btnShow2D.addEventListener("click", () => {
+    show2d = show2d ? 0 : 1;
+    if (!show1d && !show2d) show1d = 1;  // keep at least one
+    syncUIFromState();
+    render();
+  });
 
   // ---- display ----
   btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; btnLabels.classList.toggle("active", labelsOn); render(); });
@@ -1338,6 +1510,7 @@ if (jumpSelect){
       openModal();
 
       readUIToState();
+      hasUrlWindow = false;
       syncUIFromState();
 
       const url = buildDataUrl();
@@ -1473,7 +1646,18 @@ if (jumpSelect){
     centerA = clamp(centerA, WMIN_A, WMAX_A);
     windowA = clamp(windowA, 0.1, (WMAX_A - WMIN_A));
     stepA   = clamp(stepA,   0.001, (WMAX_A - WMIN_A));
-    recalcWindowFromCenter();
+
+    if (hasUrlWindow){
+      startA = clamp(startA, WMIN_A, WMAX_A - 0.1);
+      widthA = clamp(widthA, 0.1, (WMAX_A - startA));
+
+      // Keep consistent with (start,width)
+      windowA = widthA;
+      centerA = clamp(startA + 0.5 * widthA, WMIN_A, WMAX_A);
+    } else {
+      recalcWindowFromCenter();
+    }
+    if (!show1d && !show2d){ show1d = 1; }
   }
 
   centerA = 6562.800;
@@ -1490,6 +1674,9 @@ if (jumpSelect){
   medium = "air";
 
   initTheme();
+
+  // Restore state from shared URL parameters (if present)
+  applyStateFromUrl();
 
   clampState();
   syncUIFromState();
