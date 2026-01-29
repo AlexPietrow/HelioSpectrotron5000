@@ -960,6 +960,9 @@ def render_segment_png(
             axT = None
             if tellurics_on:
                 axT = ax1.twinx()
+                axT.set_zorder(ax1.get_zorder() - 1)
+                ax1.patch.set_visible(False)
+                axT.patch.set_visible(False)
                 axT.set_facecolor("none")
                 for s in axT.spines.values():
                     s.set_color(theme_dict["border"])
