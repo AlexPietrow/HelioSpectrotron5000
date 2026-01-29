@@ -208,6 +208,21 @@
       border-radius:10px;
     }
 
+    /* --- feedback + acknowledgments buttons --- */
+    #btnFeedback, #btnAck, #btnAbout{
+      position:fixed;
+      right:12px;
+      z-index:9000;
+      font-size:13px;
+      padding:8px 12px;
+      height:auto;
+      border-radius:12px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      background:var(--btn);
+    }
+    #btnFeedback{ bottom:12px; }
+    #btnAck{ bottom:66px; } /* sits above acknowledgments */
+    #btnAbout{ bottom:105px; } /* sits above acknowledgments */
 
 
     /* --- acknowledgments modal --- */
@@ -610,7 +625,6 @@
             <li><strong>Window Step</strong>: shifts the window left/right by the chosen step size.</li>
             <li><strong>Labels</strong>: toggles curated line identifications in the plot.</li>
             <li><strong>Legend</strong>: toggles legend (solar/tellurics/overlays).</li>
-            <li><strong>1D/2D</strong>: toggles 1D and 2D spectra in plot.</li>
             <li><strong>Å/nm</strong>: display unit toggle (does not change internal sampling).</li>
             <li><strong>Light/Dark</strong>: theme toggle.</li>
           </ul>
@@ -962,7 +976,18 @@
     if (!isFinite(x)) return "";
     return (Math.round(x*1000)/1000).toString();
   }
-  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+  
+
+function fmtUrl(x, maxDec = 6){
+  if (!isFinite(x)) return "";
+  return Number(x.toFixed(maxDec)).toString();
+}
+
+function encodeR500(r){
+  return (isFinite(r) && r >= 1e8) ? "0" : fmtUrl(r);
+}
+
+function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
   function openModal(){ modal.style.display = "flex"; }
   function closeModal(){ modal.style.display = "none"; }
@@ -1149,9 +1174,9 @@ if (jumpSelect){
   function buildUrl(){
     const legendParam = (firstLoadLegend || legendOn) ? 1 : 0;
     const u = new URL("segment.png", window.location.href);
-    u.searchParams.set("start",  startA.toFixed(6));
-    u.searchParams.set("width",  widthA.toFixed(6));
-    u.searchParams.set("R500",   r500.toFixed(6));
+    u.searchParams.set("start", fmtUrl(startA));
+    u.searchParams.set("width", fmtUrl(widthA));
+    u.searchParams.set("R500", fmtUrl(r500));
     u.searchParams.set("alt",    String(alt));
     u.searchParams.set("labels", labelsOn ? "1" : "0");
     u.searchParams.set("legend", legendParam ? "1" : "0");
@@ -1171,9 +1196,9 @@ if (jumpSelect){
 
   function buildDataUrl(){
     const u = new URL("segment.txt", window.location.href);
-    u.searchParams.set("start",  startA.toFixed(6));
-    u.searchParams.set("width",  widthA.toFixed(6));
-    u.searchParams.set("R500",   r500.toFixed(6));
+    u.searchParams.set("start", fmtUrl(startA));
+    u.searchParams.set("width", fmtUrl(widthA));
+    u.searchParams.set("R500", fmtUrl(r500));
     u.searchParams.set("alt",    String(alt));
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
@@ -1189,9 +1214,9 @@ if (jumpSelect){
 function buildShareUrl(){
   const u = new URL(window.location.href);
 
-  u.searchParams.set("start",  startA.toFixed(6));
-  u.searchParams.set("width",  widthA.toFixed(6));
-  u.searchParams.set("R500",   r500.toFixed(6));
+  u.searchParams.set("start", fmtUrl(startA));
+  u.searchParams.set("width", fmtUrl(widthA));
+  u.searchParams.set("R500", encodeR500(r500));
   u.searchParams.set("alt",    String(alt));
   u.searchParams.set("labels", labelsOn ? "1" : "0");
   u.searchParams.set("legend", legendOn ? "1" : "0");
@@ -1205,9 +1230,9 @@ function buildShareUrl(){
   u.searchParams.set("show2d", String(show2d));
 
   // Convenience (nice for restoring UI feel)
-  u.searchParams.set("center", centerA.toFixed(6));
-  u.searchParams.set("step",   stepA.toFixed(6));
-  u.searchParams.set("window", windowA.toFixed(6));
+  u.searchParams.set("center", fmtUrl(centerA));
+  u.searchParams.set("step", fmtUrl(stepA));
+  u.searchParams.set("window", fmtUrl(windowA));
   u.searchParams.set("winmult", String(windowMult));
 
   // Never include cache-busters in share URLs
@@ -1252,7 +1277,7 @@ function applyStateFromUrl(){
   const s2 = getInt("show2d");
 
   // Apply render state
-  if (R !== null && R > 0) r500 = R;
+  if (R !== null && R >= 0) r500 = (R === 0) ? 1e12 : R;
   if (a !== null) setAltitude(a);
 
   if (lab !== null) labelsOn = (lab === 1);
