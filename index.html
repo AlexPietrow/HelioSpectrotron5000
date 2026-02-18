@@ -1542,7 +1542,13 @@ function applyStateFromUrl(){
   // Download current PNG
   btnDownload.addEventListener("click", async () => {
     try {
-      const url = img.src;
+      readUIToState();
+      hasUrlWindow = false;
+      syncUIFromState();
+
+      // build canonical URL (NOT img.src)
+      const url = buildUrl();
+
       const resp = await fetch(url, { cache: "no-store" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const blob = await resp.blob();
@@ -1564,6 +1570,7 @@ function applyStateFromUrl(){
       status.textContent += `\n[download error] ${e}`;
     }
   });
+
 
   // Show data modal
   btnData.addEventListener("click", async () => {
