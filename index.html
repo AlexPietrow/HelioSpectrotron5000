@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=1180, initial-scale=1" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2">
   <title>Heliospectrotron 5000</title>
 
   <style>
@@ -303,7 +303,7 @@
 
     <a href="https://www.aip.de" target="_blank" rel="noopener noreferrer">
       <img
-        src="/static/aip-logo.png"
+        src="static/aip-logo.png"
         alt="Leibniz Institute for Astrophysics Potsdam (AIP)"
         class="aip-logo"
       />
@@ -1180,7 +1180,11 @@ if (jumpSelect){
 
   function buildUrl(){
     const legendParam = (firstLoadLegend || legendOn) ? 1 : 0;
+
+    // IMPORTANT: use relative endpoint (no leading slash) so this works
+    // even when the app is mounted under a path prefix on Dokku/proxies.
     const u = new URL("segment.png", window.location.href);
+
     u.searchParams.set("start", fmtUrl(startA));
     u.searchParams.set("width", fmtUrl(widthA));
     u.searchParams.set("R500", fmtUrl(r500));
@@ -1196,7 +1200,6 @@ if (jumpSelect){
     u.searchParams.set("medium", medium);
     u.searchParams.set("show1d", String(show1d));
     u.searchParams.set("show2d", String(show2d));
-  u.searchParams.set("c2d", String(c2d));
     u.searchParams.set("c2d", String(c2d));
     u.searchParams.set("transparent", "0");
     u.searchParams.set("_", String(Date.now()));
@@ -1204,7 +1207,9 @@ if (jumpSelect){
   }
 
   function buildDataUrl(){
+    // IMPORTANT: relative endpoint (no leading slash)
     const u = new URL("segment.txt", window.location.href);
+
     u.searchParams.set("start", fmtUrl(startA));
     u.searchParams.set("width", fmtUrl(widthA));
     u.searchParams.set("R500", fmtUrl(r500));
@@ -1213,8 +1218,8 @@ if (jumpSelect){
     u.searchParams.set("flux",   flux);
     // NEW: wavelength medium
     u.searchParams.set("medium", medium);
-  u.searchParams.set("show1d", String(show1d));
-  u.searchParams.set("show2d", String(show2d));
+    u.searchParams.set("show1d", String(show1d));
+    u.searchParams.set("show2d", String(show2d));
     u.searchParams.set("c2d", String(c2d));
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
@@ -1396,7 +1401,9 @@ function applyStateFromUrl(){
   let lastHoverDisp = null;
 
   async function fetchHover(xDisp){
+    // IMPORTANT: relative endpoint (no leading slash)
     const u = new URL("hover.json", window.location.href);
+
     u.searchParams.set("start",  startA.toFixed(6));
     u.searchParams.set("width",  widthA.toFixed(6));
     u.searchParams.set("R500",   r500.toFixed(6));

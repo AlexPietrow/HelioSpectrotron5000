@@ -904,7 +904,12 @@ def render_segment_png(
         fig, ax2 = plt.subplots(nrows=1, figsize=(12, 2.2), constrained_layout=True)
         ax1 = None
 
-    # Background + axes styling
+    
+    # If 1D axis is disabled, also disable features that require ax1
+    if ax1 is None:
+        labels_on = False
+        legend_on = False
+# Background + axes styling
     fig.patch.set_facecolor(theme_dict["bg"])
     if ax1 is not None:
         _style_axes(ax1, theme_dict)
@@ -1050,7 +1055,7 @@ def render_segment_png(
             ax1.set_xlabel(f"Wavelength [{unit_label}]")
 
         # ---- Line overlays (only on ax1) ----
-        if labels_on:
+        if (ax1 is not None) and labels_on:
             MAX_LABELS = 60
 
             # Moore list
@@ -1105,133 +1110,146 @@ def render_segment_png(
                         color=spec_col,
                     )
 
-        # --- 2D panel ---
-        if ax2 is not None:
-            y_strip = np.asarray(y_final, dtype=float)
+    # --- 2D panel ---
+    if ax2 is not None:
+        y_strip = np.asarray(y_final, dtype=float)
 
-            # Contrast control (2D): baseline from fixed percentiles, then expand/contract
-            # the display range linearly with c2d. This gives symmetric, visible +/- behavior.
-            finite = np.isfinite(y_strip)
-            if np.any(finite):
-                vmin0, vmax0 = np.nanpercentile(y_strip[finite], [5.0, 95.0])
-                if not np.isfinite(vmin0) or not np.isfinite(vmax0) or vmax0 <= vmin0:
-                    vmin0, vmax0 = float(np.nanmin(y_strip[finite])), float(np.nanmax(y_strip[finite]))
+        # Contrast control (2D): baseline from fixed percentiles, then expand/contract
+        # the display range linearly with c2d. This gives symmetric, visible +/- behavior.
+        finite = np.isfinite(y_strip)
+        if np.any(finite):
+            vmin0, vmax0 = np.nanpercentile(y_strip[finite], [5.0, 95.0])
+            if not np.isfinite(vmin0) or not np.isfinite(vmax0) or vmax0 <= vmin0:
+                vmin0, vmax0 = float(np.nanmin(y_strip[finite])), float(np.nanmax(y_strip[finite]))
+        else:
+            vmin0, vmax0 = 0.0, 1.0
+
+        rng = float(vmax0 - vmin0) if np.isfinite(vmax0 - vmin0) else 0.0
+        if rng <= 0.0:
+            vmin, vmax = vmin0, vmax0
+        else:
+            c = int(c2d) if c2d is not None else 0
+
+            # In normalized mode (I/Ic), use absolute steps so users can
+            # drive vmin down toward 0 regardless of the local dynamic range.
+            if flux == "norm":
+                step_abs = 0.10  # I/Ic units per click
+                d = float(abs(c)) * step_abs
             else:
-                vmin0, vmax0 = 0.0, 1.0
+                step_frac = 0.10  # fraction of baseline range per click
+                d = float(abs(c)) * step_frac * rng
 
-            rng = float(vmax0 - vmin0) if np.isfinite(vmax0 - vmin0) else 0.0
-            if rng <= 0.0:
+            if c > 0:
+                # more contrast: narrow range
+                vmin = vmin0 + d
+                vmax = vmax0 - d
+            elif c < 0:
+                # less contrast: widen range
+                vmin = vmin0 - d
+                vmax = vmax0 + d
+                if flux == "norm":
+                    vmin = max(0.0, vmin)  # allow down to 0 in I/Ic
+            else:
                 vmin, vmax = vmin0, vmax0
-            else:
-                step_frac = 0.10  # 10% of baseline range per click (very visible)
-                d = float(abs(int(c2d))) * step_frac * rng
 
-                if int(c2d) > 0:
-                    # more contrast: narrow range
-                    vmin = vmin0 + d
-                    vmax = vmax0 - d
-                elif int(c2d) < 0:
-                    # less contrast: widen range
-                    vmin = vmin0 - d
-                    vmax = vmax0 + d
+            # safety: don't invert
+            if vmax <= vmin:
+                mid = 0.5 * (vmin0 + vmax0)
+                if flux == "norm":
+                    half = 0.05
                 else:
-                    vmin, vmax = vmin0, vmax0
+                    half = 0.05 * rng
+                vmin, vmax = mid - half, mid + half
 
-                # safety: don't invert
-                if vmax <= vmin:
-                    mid = 0.5 * (vmin0 + vmax0)
-                    half = 0.5 * step_frac * rng
-                    vmin, vmax = mid - half, mid + half
+# tile into a strip
+        img2d = np.tile(y_strip[np.newaxis, :], (REPEAT_2D, 1))
 
-            # tile into a strip
-            img2d = np.tile(y_strip[np.newaxis, :], (REPEAT_2D, 1))
+        # Build wavelength bin EDGES from sample CENTERS (non-uniform-safe)
+        x = np.asarray(w_plot, dtype=float)
+        if x.size >= 2:
+            x_edges = np.empty(x.size + 1, dtype=float)
+            x_edges[1:-1] = 0.5 * (x[:-1] + x[1:])
+            x_edges[0] = x[0] - 0.5 * (x[1] - x[0])
+            x_edges[-1] = x[-1] + 0.5 * (x[-1] - x[-2])
+        else:
+            # degenerate fallback
+            x_edges = np.array([x[0] - 0.5, x[0] + 0.5], dtype=float)
 
-            # Build wavelength bin EDGES from sample CENTERS (non-uniform-safe)
-            x = np.asarray(w_plot, dtype=float)
-            if x.size >= 2:
-                x_edges = np.empty(x.size + 1, dtype=float)
-                x_edges[1:-1] = 0.5 * (x[:-1] + x[1:])
-                x_edges[0] = x[0] - 0.5 * (x[1] - x[0])
-                x_edges[-1] = x[-1] + 0.5 * (x[-1] - x[-2])
-            else:
-                # degenerate fallback
-                x_edges = np.array([x[0] - 0.5, x[0] + 0.5], dtype=float)
+        y_edges = np.linspace(0.0, 1.0, REPEAT_2D + 1)
 
-            y_edges = np.linspace(0.0, 1.0, REPEAT_2D + 1)
+        ax2.pcolormesh(
+            x_edges,
+            y_edges,
+            img2d,
+            shading="flat",
+            cmap="gray",
+            vmin=vmin,
+            vmax=vmax,
+        )
 
-            ax2.pcolormesh(
-                x_edges,
-                y_edges,
-                img2d,
-                shading="flat",
-                cmap="gray",
-                vmin=vmin,
-                vmax=vmax,
-            )
-
-            ax2.set_xlim(start_plot, end_plot)
-            ax2.set_xlabel(f"Wavelength [{unit_label}]")
-            ax2.set_yticks([])
-            ax2.tick_params(colors=theme_dict["text"], which="both")
+        ax2.set_xlim(start_plot, end_plot)
+        ax2.set_xlabel(f"Wavelength [{unit_label}]")
+        ax2.set_yticks([])
+        ax2.tick_params(colors=theme_dict["text"], which="both")
 
 
-        if ax1 is not None:
-            ax1.minorticks_on()
-            ax1.xaxis.set_minor_locator(AutoMinorLocator(10))
+    if ax1 is not None:
+        ax1.minorticks_on()
+        ax1.xaxis.set_minor_locator(AutoMinorLocator(10))
 
-        if ax2 is not None:
-            ax2.minorticks_on()
-            ax2.xaxis.set_minor_locator(AutoMinorLocator(10))
+    if ax2 is not None:
+        ax2.minorticks_on()
+        ax2.xaxis.set_minor_locator(AutoMinorLocator(10))
 
 
-        # --- subtle bottom watermark (no bar, split left/right) ---
-        try:
-            left_text = "Rendered with HelioSpectrotron5000"
-            right_text = "hs5000.vo.aip.de"
+    # --- subtle bottom watermark (no bar, split left/right) ---
+    try:
+        left_text = "Rendered with HelioSpectrotron5000"
+        right_text = "hs5000.vo.aip.de"
 
-            if theme == "dark":
-                text_color = (0.85, 0.85, 0.85, 0.7)
-            else:
-                text_color = (0.15, 0.15, 0.15, 0.7)
+        if theme == "dark":
+            text_color = (0.85, 0.85, 0.85, 0.7)
+        else:
+            text_color = (0.15, 0.15, 0.15, 0.7)
 
-            # Left side
-            fig.text(
-                0.01,          # small left margin
-                0.01,
-                left_text,
-                ha="left",
-                va="bottom",
-                fontsize=7,
-                color=text_color,
-                alpha=0.9,
-                zorder=1000,
-            )
+        # Left side
+        fig.text(
+            0.01,          # small left margin
+            0.01,
+            left_text,
+            ha="left",
+            va="bottom",
+            fontsize=7,
+            color=text_color,
+            alpha=0.9,
+            zorder=1000,
+        )
 
-            # Right side
-            fig.text(
-                0.99,          # small right margin
-                0.01,
-                right_text,
-                ha="right",
-                va="bottom",
-                fontsize=7,
-                color=text_color,
-                alpha=0.9,
-                zorder=1000,
-            )
+        # Right side
+        fig.text(
+            0.99,          # small right margin
+            0.01,
+            right_text,
+            ha="right",
+            va="bottom",
+            fontsize=7,
+            color=text_color,
+            alpha=0.9,
+            zorder=1000,
+        )
 
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 
 
 
 
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
-        plt.close(fig)
-        gc.collect()
-        return buf.getvalue()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
+    plt.close(fig)
+    gc.collect()
+    return buf.getvalue()
 
 # ----------------------------
 # FastAPI app
