@@ -39,6 +39,8 @@ import gc
 import sys
 import traceback
 from typing import Optional, Tuple, Dict
+from matplotlib.ticker import AutoMinorLocator
+
 
 import numpy as np
 import astropy.units as u
@@ -72,6 +74,9 @@ DEFAULT_R500 = 1e12
 
 DPI = 160
 REPEAT_2D = 120
+
+RENDER_META: Dict[str, Dict] = {}
+
 
 # Theme colors (match your frontend dark theme intent)
 THEME_LIGHT = {
@@ -265,6 +270,21 @@ def apply_resolution_R500(w: np.ndarray, y: np.ndarray, R500: float) -> np.ndarr
 # ----------------------------
 # Air/Vacuum wavelength conversion helpers
 # ----------------------------
+
+def contrast_percentiles(c2d: int):
+    # c2d: integer steps, default 0
+    # + => more contrast (narrower), - => less contrast (wider)
+    base_lo, base_hi = 5.0, 95.0
+    step = 8.0  # percentile points per click (bigger = more visible)
+    plo = base_lo + step * c2d
+    phi = base_hi - step * c2d
+    # keep sensible bounds
+    plo = float(np.clip(plo, 0.1, 49.0))
+    phi = float(np.clip(phi, 51.0, 99.9))
+    if phi <= plo + 1.0:
+        phi = plo + 1.0
+    return plo, phi
+
 def air_to_vac_A(w_air_A: np.ndarray) -> np.ndarray:
     """Convert air wavelengths [Å] -> vacuum wavelengths [Å] using specutils.air_to_vac.
 
@@ -833,6 +853,7 @@ def render_segment_png(
     transparent: bool = False,
     show1d: bool = True,
     show2d: bool = True,
+    c2d: int = 0,
 ) -> bytes:
     """Render [start,end] slice.
 
@@ -901,6 +922,23 @@ def render_segment_png(
                      transform=ax2.transAxes, color=theme_dict["text"])
             ax2.axis("off")
 
+
+        # --- store axis pixel metadata for hover mapping ---
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+
+        png_w = float(fig.bbox.width)
+
+        if ax1 is not None:
+            bb = ax1.get_window_extent(renderer=renderer)
+            meta = {
+                "png_w": png_w,
+                "ax1_x0": float(bb.x0),
+                "ax1_x1": float(bb.x1),
+            }
+
+            key = f"{start:.6f}|{end:.6f}|{R500:.6f}|{alt_m}|{medium}|{unit}|{flux}|{theme}|{int(show1d)}|{int(show2d)}"
+            RENDER_META[key] = meta
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
         plt.close(fig)
@@ -1067,39 +1105,133 @@ def render_segment_png(
                         color=spec_col,
                     )
 
-    # --- 2D panel ---
-    if ax2 is not None:
-        y_strip = np.asarray(y_final, dtype=float)
+        # --- 2D panel ---
+        if ax2 is not None:
+            y_strip = np.asarray(y_final, dtype=float)
 
-        p1 = float(np.nanpercentile(y_strip, 1))
-        p99 = float(np.nanpercentile(y_strip, 99))
-        if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
-            p1, p99 = float(np.nanmin(y_strip)), float(np.nanmax(y_strip))
-        if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
-            p1, p99 = 0.0, 1.0
+            # Contrast control (2D): baseline from fixed percentiles, then expand/contract
+            # the display range linearly with c2d. This gives symmetric, visible +/- behavior.
+            finite = np.isfinite(y_strip)
+            if np.any(finite):
+                vmin0, vmax0 = np.nanpercentile(y_strip[finite], [5.0, 95.0])
+                if not np.isfinite(vmin0) or not np.isfinite(vmax0) or vmax0 <= vmin0:
+                    vmin0, vmax0 = float(np.nanmin(y_strip[finite])), float(np.nanmax(y_strip[finite]))
+            else:
+                vmin0, vmax0 = 0.0, 1.0
 
-        y_strip_n = (y_strip - p1) / (p99 - p1) if (p99 > p1) else y_strip * 0.0
-        y_strip_n = np.clip(y_strip_n, 0.0, 1.0)
+            rng = float(vmax0 - vmin0) if np.isfinite(vmax0 - vmin0) else 0.0
+            if rng <= 0.0:
+                vmin, vmax = vmin0, vmax0
+            else:
+                step_frac = 0.10  # 10% of baseline range per click (very visible)
+                d = float(abs(int(c2d))) * step_frac * rng
 
-        img2d = np.tile(y_strip_n[np.newaxis, :], (REPEAT_2D, 1))
-        ax2.imshow(
-            img2d,
-            aspect="auto",
-            origin="lower",
-            interpolation="nearest",
-            cmap="gray",
-            extent=[w_plot[0], w_plot[-1], 0, 1.0],
-        )
-        ax2.set_xlim(start_plot, end_plot)
-        ax2.set_xlabel(f"Wavelength [{unit_label}]")
-        ax2.set_yticks([])
-        ax2.tick_params(colors=theme_dict["text"], which="both")
+                if int(c2d) > 0:
+                    # more contrast: narrow range
+                    vmin = vmin0 + d
+                    vmax = vmax0 - d
+                elif int(c2d) < 0:
+                    # less contrast: widen range
+                    vmin = vmin0 - d
+                    vmax = vmax0 + d
+                else:
+                    vmin, vmax = vmin0, vmax0
 
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
-    plt.close(fig)
-    gc.collect()
-    return buf.getvalue()
+                # safety: don't invert
+                if vmax <= vmin:
+                    mid = 0.5 * (vmin0 + vmax0)
+                    half = 0.5 * step_frac * rng
+                    vmin, vmax = mid - half, mid + half
+
+            # tile into a strip
+            img2d = np.tile(y_strip[np.newaxis, :], (REPEAT_2D, 1))
+
+            # Build wavelength bin EDGES from sample CENTERS (non-uniform-safe)
+            x = np.asarray(w_plot, dtype=float)
+            if x.size >= 2:
+                x_edges = np.empty(x.size + 1, dtype=float)
+                x_edges[1:-1] = 0.5 * (x[:-1] + x[1:])
+                x_edges[0] = x[0] - 0.5 * (x[1] - x[0])
+                x_edges[-1] = x[-1] + 0.5 * (x[-1] - x[-2])
+            else:
+                # degenerate fallback
+                x_edges = np.array([x[0] - 0.5, x[0] + 0.5], dtype=float)
+
+            y_edges = np.linspace(0.0, 1.0, REPEAT_2D + 1)
+
+            ax2.pcolormesh(
+                x_edges,
+                y_edges,
+                img2d,
+                shading="flat",
+                cmap="gray",
+                vmin=vmin,
+                vmax=vmax,
+            )
+
+            ax2.set_xlim(start_plot, end_plot)
+            ax2.set_xlabel(f"Wavelength [{unit_label}]")
+            ax2.set_yticks([])
+            ax2.tick_params(colors=theme_dict["text"], which="both")
+
+
+        if ax1 is not None:
+            ax1.minorticks_on()
+            ax1.xaxis.set_minor_locator(AutoMinorLocator(10))
+
+        if ax2 is not None:
+            ax2.minorticks_on()
+            ax2.xaxis.set_minor_locator(AutoMinorLocator(10))
+
+
+        # --- subtle bottom watermark (no bar, split left/right) ---
+        try:
+            left_text = "Rendered with HelioSpectrotron5000"
+            right_text = "hs5000.vo.aip.de"
+
+            if theme == "dark":
+                text_color = (0.85, 0.85, 0.85, 0.7)
+            else:
+                text_color = (0.15, 0.15, 0.15, 0.7)
+
+            # Left side
+            fig.text(
+                0.01,          # small left margin
+                0.01,
+                left_text,
+                ha="left",
+                va="bottom",
+                fontsize=7,
+                color=text_color,
+                alpha=0.9,
+                zorder=1000,
+            )
+
+            # Right side
+            fig.text(
+                0.99,          # small right margin
+                0.01,
+                right_text,
+                ha="right",
+                va="bottom",
+                fontsize=7,
+                color=text_color,
+                alpha=0.9,
+                zorder=1000,
+            )
+
+        except Exception:
+            pass
+
+
+
+
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
+        plt.close(fig)
+        gc.collect()
+        return buf.getvalue()
 
 # ----------------------------
 # FastAPI app
@@ -1167,6 +1299,7 @@ def segment_png(
     transparent: Optional[int] = 0, # 0/1
     show1d: Optional[int] = 1,      # 0/1
     show2d: Optional[int] = 1,      # 0/1
+    c2d: Optional[int] = 0,          # 2D contrast step
 ):
     try:
         start = float(start)
@@ -1202,6 +1335,7 @@ def segment_png(
             transparent=transparent_on,
             show1d=bool(int(show1d)) if show1d is not None else True,
             show2d=bool(int(show2d)) if show2d is not None else True,
+            c2d=int(c2d) if c2d is not None else 0,
         )
         return Response(
             content=png,
@@ -1362,15 +1496,42 @@ def hover_json(
         y_highres = np.asarray(y_base * t_seg, dtype=float)
         y_final   = np.asarray(apply_resolution_R500(w, y_highres, R500), dtype=float)
 
-        if not (w[0] <= x_air <= w[-1]):
-            return JSONResponse(
-                {"ok": True, "unit": unit_label, "x": x, "y": None, "note": "x out of slice"},
-                status_code=200,
-            )
+        # Clamp instead of returning y=None (prevents y=— near plot margins)
+        x_air_c = float(np.clip(x_air, float(w[0]), float(w[-1])))
+        y = float(np.interp(x_air_c, w, y_final))
 
-        y = float(np.interp(x_air, w, y_final))
 
-        return JSONResponse({"ok": True, "unit": unit_label, "x": x, "y": y}, status_code=200)
+        # --- local minimum around cursor (in AIR Å) ---
+        LOCAL_MIN_HALF_WIN_A = 0.5  # +/- 0.5 Å
+
+        m = (w >= x_air_c - LOCAL_MIN_HALF_WIN_A) & (w <= x_air_c + LOCAL_MIN_HALF_WIN_A)
+        if np.any(m):
+            yy = y_final[m]
+            ww = w[m]
+            j = int(np.nanargmin(yy))
+            locmin_y = float(yy[j])
+            locmin_air = float(ww[j])
+
+            # convert local-min wavelength to requested medium
+            locmin_disp_A = float(air_to_medium_A(np.array([locmin_air], dtype=float), medium)[0])
+
+            # and to requested plotting unit
+            locmin_x_disp = (locmin_disp_A / 10.0) if (u in ("nm","nanometer","nanometers")) else locmin_disp_A
+        else:
+            locmin_y = None
+            locmin_x_disp = None
+
+
+
+        return JSONResponse({
+            "ok": True,
+            "unit": unit_label,
+            "x": x,
+            "y": y,
+            "locmin_x": locmin_x_disp,
+            "locmin_y": locmin_y,
+        }, status_code=200)
+
 
     except Exception:
         tb = traceback.format_exc()

@@ -360,7 +360,7 @@
           <button id="btnLegend" title="Toggle legend">Legend</button>
           <button id="btnShow1D" class="active" title="Toggle 1D spectrum panel">1D</button>
           <button id="btnShow2D" class="active" title="Toggle 2D spectrum panel">2D</button>
-          <button id="btnUnit" title="Toggle plotting unit">Å</button>
+<button id="btnUnit" title="Toggle plotting unit">Å</button>
           <button id="btnTheme" title="Toggle light/dark">Dark</button>
         </div>
         <div class="subtitle" style="margin-top:6px;">Display Options</div>
@@ -441,7 +441,18 @@
     <div class="subtitle" style="margin-top:6px;">Wavelength medium</div>
   </fieldset>
 
-  <!-- Jump to -->
+  <!-- 2D contrast -->
+  <fieldset class="field" style="min-width:auto;">
+    <legend>2D Contrast</legend>
+    <div class="seg">
+      <button id="btnC2DPlus" title="Increase 2D contrast">+</button>
+      <button id="btnC2DZero" class="active" title="Reset 2D contrast">0</button>
+      <button id="btnC2DMinus" title="Decrease 2D contrast">-</button>
+    </div>
+    <div class="subtitle" style="margin-top:6px;">Stretch 2D grayscale</div>
+  </fieldset>
+
+<!-- Jump to -->
 <fieldset class="field" style="flex:1;">
   <legend>Jump to</legend>
 
@@ -632,12 +643,13 @@
       </details>
 
       <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
-        <summary style="cursor:pointer; font-weight:700;">Tellurics, altitude, and Air/Vacuum</summary>
+        <summary style="cursor:pointer; font-weight:700;">Tellurics, altitude, Contrast, and Air/Vacuum</summary>
         <div style="margin-top:8px;">
           <ul style="margin:0; padding-left:18px;">
             <li><strong>Tellurics On/Off</strong>: toggles atmospheric transmission overlay.</li>
             <li><strong>Altitude</strong>: changes expected telluric absorption strength.</li>
             <li><strong>Air/Vacuum</strong>: selects wavelength convention used for display and backend queries.</li>
+            <li><strong>2D Contrast</strong>: Changes the contrast of the 2D spectrum to simulate exposure time and signal-to-noise effects.</li>
           </ul>
         </div>
       </details>
@@ -785,6 +797,7 @@
   let refinf = 0;      // 1 = overlay REF∞ (unconvolved), 0 = off
   let show1d = 1;      // 1 = show 1D panel
   let show2d = 1;      // 1 = show 2D panel
+  let c2d = 0;        // 2D contrast step (-20..+20)
   // Window: store the ACTUAL displayed base window in Å (already includes multiplier)
   let windowA = DEF_W_A;       // (Å) actual window value shown in input
   let windowMult = 1;          // ×1, ×2, ×5 (UI only; applied by updating windowA)
@@ -816,6 +829,9 @@
   const btnTheme  = el("btnTheme");
   const btnShow1D = el("btnShow1D");
   const btnShow2D = el("btnShow2D");
+  const btnC2DPlus   = el("btnC2DPlus");
+  const btnC2DZero   = el("btnC2DZero");
+  const btnC2DMinus  = el("btnC2DMinus");
 
   let theme = "light";
   const btnFluxNorm = el("btnFluxNorm");
@@ -854,6 +870,12 @@
     btnShow2D.classList.toggle("active", show2d === 1);
     btnShow1D.setAttribute("aria-pressed", show1d ? "true" : "false");
     btnShow2D.setAttribute("aria-pressed", show2d ? "true" : "false");
+
+    // 2D contrast buttons
+    if (btnC2DZero){
+      btnC2DZero.classList.toggle("active", c2d === 0);
+      btnC2DZero.setAttribute("aria-pressed", (c2d === 0) ? "true" : "false");
+    }
 
 // Wavelength medium buttons
   const btnAir = el("btnAir");
@@ -1174,6 +1196,8 @@ if (jumpSelect){
     u.searchParams.set("medium", medium);
     u.searchParams.set("show1d", String(show1d));
     u.searchParams.set("show2d", String(show2d));
+  u.searchParams.set("c2d", String(c2d));
+    u.searchParams.set("c2d", String(c2d));
     u.searchParams.set("transparent", "0");
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
@@ -1191,6 +1215,7 @@ if (jumpSelect){
     u.searchParams.set("medium", medium);
   u.searchParams.set("show1d", String(show1d));
   u.searchParams.set("show2d", String(show2d));
+    u.searchParams.set("c2d", String(c2d));
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
   }
@@ -1260,6 +1285,7 @@ function applyStateFromUrl(){
   const med = getStr("medium");
   const s1 = getInt("show1d");
   const s2 = getInt("show2d");
+  const cc = getInt("c2d");
 
   // Apply render state
   if (R !== null && R >= 0) r500 = (R === 0) ? 1e12 : R;
@@ -1276,6 +1302,7 @@ function applyStateFromUrl(){
 
   if (s1 !== null) show1d = (s1 === 1) ? 1 : 0;
   if (s2 !== null) show2d = (s2 === 1) ? 1 : 0;
+  if (cc !== null) c2d = clamp(cc, -20, 20);
   if (!show1d && !show2d){ show1d = 1; }
 
   // Theme from URL should override local preference
@@ -1377,10 +1404,9 @@ function applyStateFromUrl(){
     u.searchParams.set("tellurics", String(tellurics));
     u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
     u.searchParams.set("flux",   flux);
-    // NEW: wavelength medium
     u.searchParams.set("medium", medium);
-  u.searchParams.set("show1d", String(show1d));
-  u.searchParams.set("show2d", String(show2d));
+    u.searchParams.set("show1d", String(show1d));
+    u.searchParams.set("show2d", String(show2d));
     u.searchParams.set("x",      xDisp.toFixed(6));
     u.searchParams.set("_", String(Date.now()));
     const resp = await fetch(u.toString(), { cache: "no-store" });
@@ -1401,7 +1427,7 @@ function applyStateFromUrl(){
     const lamDisp = lamA * factorFromA();
     lastHoverDisp = lamDisp;
 
-    // Immediate wavelength feedback
+    // Immediate feedback (wavelength only)
     hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=…`;
 
     if (hoverRAF) return;
@@ -1409,25 +1435,40 @@ function applyStateFromUrl(){
       hoverRAF = null;
       try {
         const js = await fetchHover(lastHoverDisp);
-        if (!js || !js.ok || js.y === null || !isFinite(js.y)) {
-          hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=—`;
-          return;
-        }
 
         let yLabel = "y";
         if (flux === "norm") yLabel = "I/Ic";
         else if (flux === "cgs") yLabel = "Iν";
         else if (flux === "flam") yLabel = "Iλ";
 
-        hoverPill.textContent =
-          `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  ${yLabel}=${Number(js.y).toPrecision(6)}`;
+        if (!js || !js.ok || js.y === null || !isFinite(js.y) || js.x === null || !isFinite(js.x)) {
+          hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  ${yLabel}=—`;
+          return;
+        }
+
+        const xStr = `${Number(js.x).toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
+        const yStr = `${Number(js.y).toPrecision(6)}`;
+
+        let minStr = "";
+        if (js.locmin_x !== null && isFinite(js.locmin_x) &&
+            js.locmin_y !== null && isFinite(js.locmin_y)) {
+
+          const minXStr = `${Number(js.locmin_x).toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
+          const minYStr = `${Number(js.locmin_y).toPrecision(6)}`;
+          minStr = ` | min ${minXStr}, ${yLabel}=${minYStr}`;
+        }
+
+        hoverPill.textContent = `hover: ${xStr}, ${yLabel}=${yStr}${minStr}`;
       } catch (e) {
         hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=ERR`;
       }
     });
   }
+
   img.addEventListener("mousemove", updateHover);
   img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
+
+
 
   // ---- panel toggles ----
   btnShow1D.addEventListener("click", () => {
@@ -1442,6 +1483,16 @@ function applyStateFromUrl(){
     syncUIFromState();
     render();
   });
+
+  // ---- 2D contrast ----
+  function bumpC2D(d){
+    c2d = clamp(c2d + d, -20, 20);
+    syncUIFromState();
+    render();
+  }
+  if (btnC2DPlus)  btnC2DPlus.addEventListener("click", () => bumpC2D(+1));
+  if (btnC2DMinus) btnC2DMinus.addEventListener("click", () => bumpC2D(-1));
+  if (btnC2DZero)  btnC2DZero.addEventListener("click", () => { c2d = 0; syncUIFromState(); render(); });
 
   // ---- display ----
   btnLabels.addEventListener("click", () => { labelsOn = !labelsOn; btnLabels.classList.toggle("active", labelsOn); render(); });
