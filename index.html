@@ -95,7 +95,9 @@
       border:1px solid var(--border);
       background:var(--bg);
       display:block;
-    }
+    
+  clip-path: inset(0 0 4px 0);
+}
     .status{
       font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size:12px;color:var(--muted);margin-top:8px;white-space:pre-wrap;
@@ -780,6 +782,13 @@
 </div>
 
 <script>
+window.HS5000_HOVER_VERSION = "hoverfix-barcode-v2";
+console.log("HS5000", window.HS5000_HOVER_VERSION);
+
+// Hover mapping version stamp (for cache/debug)
+window.HS5000_HOVER_VERSION = "hoverfix-v5";
+console.log("HS5000", window.HS5000_HOVER_VERSION);
+
 (() => {
     function el(id) { return document.getElementById(id); }
 
@@ -1359,12 +1368,14 @@ function applyStateFromUrl(){
 
     const url = buildUrl();
 
-    img.onload = () => {
+    img.onload = async () => {
       if (firstLoadLegend) {
         firstLoadLegend = false;
         legendOn = false;
         btnLegend.classList.remove("active");
       }
+      // Update axis pixel bounds so hover wavelength matches tick labels
+      await fetchRenderMeta();
     };
 
     img.onerror = async () => {
@@ -1378,7 +1389,10 @@ function applyStateFromUrl(){
     };
 
     img.src = url;
+    if (typeof hoverCanvas !== 'undefined') { hoverCanvas.width = 0; hoverCanvas.height = 0; }
 
+
+    
     // Keep page URL in sync so this view can be shared
     syncUrlFromState();
 
@@ -1397,8 +1411,64 @@ function applyStateFromUrl(){
   }
 
   // ---- hover wavelength + y readout (backend hover.json) ----
+  // ---- Robust hover mapping: decode wavelength from hidden barcode strip in PNG ----
+  const hoverCanvas = document.createElement("canvas");
+  const hoverCtx = hoverCanvas.getContext("2d", { willReadFrequently: true });
+
+  function ensureHoverCanvas(){
+    const natW = img.naturalWidth || 0;
+    const natH = img.naturalHeight || 0;
+    if (!(natW > 0 && natH > 4)) return false;
+    if (hoverCanvas.width !== natW || hoverCanvas.height !== natH){
+      hoverCanvas.width = natW;
+      hoverCanvas.height = natH;
+      hoverCtx.drawImage(img, 0, 0, natW, natH);
+    }
+    return true;
+  }
+
+  function decodeWavFromBarcode(xpng){
+    if (!ensureHoverCanvas()) return null;
+    const natW = hoverCanvas.width;
+    const natH = hoverCanvas.height;
+    const xi = Math.max(0, Math.min(natW - 1, Math.round(xpng)));
+    const yi = natH - 2; // within barcode strip
+    const px = hoverCtx.getImageData(xi, yi, 1, 1).data;
+    const v = (px[0] << 16) | (px[1] << 8) | (px[2]);
+    if (v === 0) return null;
+    return v / 1000.0; // must match backend HOVER_BAR_SCALE
+  }
+
+
   let hoverRAF = null;
   let lastHoverDisp = null;
+
+  // Axis pixel metadata for correct hover -> wavelength mapping
+  // Provided by backend (/render_meta.json) after each successful render.
+  let renderMeta = null;
+
+  async function fetchRenderMeta(){
+    const u = new URL("render_meta.json", window.location.href);
+    u.searchParams.set("start",  startA.toFixed(6));
+    u.searchParams.set("width",  widthA.toFixed(6));
+    u.searchParams.set("R500",   r500.toFixed(6));
+    u.searchParams.set("alt",    String(alt));
+    u.searchParams.set("unit",   (unit === "nm") ? "nm" : "A");
+    u.searchParams.set("flux",   flux);
+    u.searchParams.set("medium", medium);
+    u.searchParams.set("theme",  theme);
+    u.searchParams.set("show1d", String(show1d));
+    u.searchParams.set("show2d", String(show2d));
+    u.searchParams.set("_", String(Date.now()));
+    try{
+      const resp = await fetch(u.toString(), { cache: "no-store" });
+      const js = await resp.json();
+      renderMeta = (js && js.ok) ? js : null;
+    }catch(e){
+      renderMeta = null;
+    }
+  }
+
 
   async function fetchHover(xDisp){
     // IMPORTANT: relative endpoint (no leading slash)
@@ -1422,58 +1492,102 @@ function applyStateFromUrl(){
 
   function updateHover(ev){
     const rect = img.getBoundingClientRect();
-    const xpx = ev.clientX - rect.left;
 
-    if (xpx < 0 || xpx > rect.width) {
+    // Border-aware coordinates inside the *image content* box (CSS pixels)
+    const cs = getComputedStyle(img);
+    const bl = parseFloat(cs.borderLeftWidth)  || 0;
+    const br = parseFloat(cs.borderRightWidth) || 0;
+
+    const innerW = rect.width - bl - br;
+    const xcss = ev.clientX - rect.left - bl;
+
+    if (!(innerW > 0) || xcss < 0 || xcss > innerW) {
       hoverPill.textContent = "hover: —";
       return;
     }
 
-    const frac = rect.width > 0 ? (xpx / rect.width) : 0;
-    const lamA = startA + frac * widthA;
-    const lamDisp = lamA * factorFromA();
-    lastHoverDisp = lamDisp;
+    // Map CSS x -> PNG native pixel x (stable even when the image is scaled)
+    const natW = img.naturalWidth;
+    if (!(natW > 0)) {
+      hoverPill.textContent = "hover: —";
+      return;
+    }
+    const xpng = xcss * (natW / innerW);
 
-    // Immediate feedback (wavelength only)
-    hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=…`;
+    // First choice: decode the exact axis x-value from the hidden PNG barcode strip (if present).
+    // This avoids drift from bbox/clip/legend/tight-layout effects.
+    let lamAxis = decodeWavFromBarcode(xpng);
 
-    if (hoverRAF) return;
+    // Convert native PNG pixels -> Matplotlib canvas pixels used by renderMeta
+    // (renderMeta.png_w corresponds to Matplotlib canvas width in pixels)
+
+    if (renderMeta &&
+        isFinite(renderMeta.png_w) && isFinite(renderMeta.ax1_x0) && isFinite(renderMeta.ax1_x1) &&
+        isFinite(renderMeta.xlim0) && isFinite(renderMeta.xlim1) &&
+        renderMeta.png_w > 0 && (renderMeta.ax1_x1 > renderMeta.ax1_x0)) {
+
+      const xfig = xpng * (renderMeta.png_w / natW);
+
+      if (xfig >= renderMeta.ax1_x0 && xfig <= renderMeta.ax1_x1) {
+        const frac = (xfig - renderMeta.ax1_x0) / (renderMeta.ax1_x1 - renderMeta.ax1_x0);
+        lamAxis = renderMeta.xlim0 + frac * (renderMeta.xlim1 - renderMeta.xlim0);
+      }
+    }
+
+    // Fallback: assume requested window fills the content box (only if meta missing)
+    if (lamAxis === null) {
+      const frac = xcss / innerW;
+      lamAxis = startA + frac * widthA;
+    }
+
+    // lamAxis is in the plotted axis unit already (Å when unit='A', nm when unit='nm')
+    lastHoverDisp = lamAxis;
+
+    // Throttle network calls: at most one in-flight per animation frame
+    if (hoverRAF) cancelAnimationFrame(hoverRAF);
     hoverRAF = requestAnimationFrame(async () => {
       hoverRAF = null;
-      try {
-        const js = await fetchHover(lastHoverDisp);
+      const xq = lastHoverDisp;
+      if (!isFinite(xq)) return;
 
-        let yLabel = "y";
-        if (flux === "norm") yLabel = "I/Ic";
-        else if (flux === "cgs") yLabel = "Iν";
-        else if (flux === "flam") yLabel = "Iλ";
-
-        if (!js || !js.ok || js.y === null || !isFinite(js.y) || js.x === null || !isFinite(js.x)) {
-          hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  ${yLabel}=—`;
+      try{
+        const js = await fetchHover(xq);
+        if (!js || !js.ok){
+          hoverPill.textContent = "hover: —";
           return;
         }
 
-        const xStr = `${Number(js.x).toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
-        const yStr = `${Number(js.y).toPrecision(6)}`;
+        const uLbl = (unit === "nm") ? "nm" : "Å";
+        const xTxt = (unit === "nm") ? Number(js.x).toFixed(4) : Number(js.x).toFixed(3);
 
-        let minStr = "";
-        if (js.locmin_x !== null && isFinite(js.locmin_x) &&
-            js.locmin_y !== null && isFinite(js.locmin_y)) {
-
-          const minXStr = `${Number(js.locmin_x).toFixed(3)} ${(unit==="nm")?"nm":"Å"}`;
-          const minYStr = `${Number(js.locmin_y).toPrecision(6)}`;
-          minStr = ` | min ${minXStr}, ${yLabel}=${minYStr}`;
+        // y formatting: keep sane precision across modes
+        let yTxt = "—";
+        if (typeof js.y === "number" && isFinite(js.y)){
+          if (flux === "norm") yTxt = js.y.toFixed(4);
+          else yTxt = js.y.toExponential(6);
         }
 
-        hoverPill.textContent = `hover: ${xStr}, ${yLabel}=${yStr}${minStr}`;
-      } catch (e) {
-        hoverPill.textContent = `hover: ${lamDisp.toFixed(3)} ${(unit==="nm")?"nm":"Å"}  y=ERR`;
+        // local minimum (optional)
+        let extra = "";
+        if (typeof js.locmin_x === "number" && isFinite(js.locmin_x) &&
+            typeof js.locmin_y === "number" && isFinite(js.locmin_y)){
+          const lmX = (unit === "nm") ? Number(js.locmin_x).toFixed(4) : Number(js.locmin_x).toFixed(3);
+          const lmY = (flux === "norm") ? Number(js.locmin_y).toFixed(4) : Number(js.locmin_y).toExponential(6);
+          extra = `  |  min: ${lmX} ${uLbl}, ${lmY}`;
+        }
+
+        hoverPill.textContent = `hover: ${xTxt} ${uLbl}, ${yTxt}${extra}`;
+      }catch(e){
+        hoverPill.textContent = "hover: —";
       }
     });
-  }
+}
 
   img.addEventListener("mousemove", updateHover);
-  img.addEventListener("mouseleave", () => { hoverPill.textContent = "hover: —"; });
+  img.addEventListener("mouseleave", () => { 
+    if (hoverRAF) { cancelAnimationFrame(hoverRAF); hoverRAF = null; }
+    hoverPill.textContent = "hover: —"; 
+  });
 
 
 

@@ -34,6 +34,7 @@ Run:
 """
 
 import io
+from PIL import Image
 import os
 import gc
 import sys
@@ -74,6 +75,10 @@ DEFAULT_R500 = 1e12
 
 DPI = 160
 REPEAT_2D = 120
+
+# Hover wavelength barcode strip (pixels) appended to PNG bottom
+HOVER_BAR_H = 4
+HOVER_BAR_SCALE = 1000.0  # encode x-axis units * scale into 24-bit integer
 
 RENDER_META: Dict[str, Dict] = {}
 
@@ -895,13 +900,13 @@ def render_segment_png(
             nrows=2,
             figsize=(12, 4.8),
             gridspec_kw={"height_ratios": [2, 1]},
-            constrained_layout=True,
+            dpi=DPI, constrained_layout=True,
         )
     elif show1d and (not show2d):
-        fig, ax1 = plt.subplots(nrows=1, figsize=(12, 3.2), constrained_layout=True)
+        fig, ax1 = plt.subplots(nrows=1, figsize=(12, 3.2), dpi=DPI, constrained_layout=True)
         ax2 = None
     else:
-        fig, ax2 = plt.subplots(nrows=1, figsize=(12, 2.2), constrained_layout=True)
+        fig, ax2 = plt.subplots(nrows=1, figsize=(12, 2.2), dpi=DPI, constrained_layout=True)
         ax1 = None
 
     
@@ -909,7 +914,7 @@ def render_segment_png(
     if ax1 is None:
         labels_on = False
         legend_on = False
-# Background + axes styling
+    # Background + axes styling
     fig.patch.set_facecolor(theme_dict["bg"])
     if ax1 is not None:
         _style_axes(ax1, theme_dict)
@@ -930,25 +935,27 @@ def render_segment_png(
 
         # --- store axis pixel metadata for hover mapping ---
         fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
 
-        png_w = float(fig.bbox.width)
+        # Canvas pixel size (this matches the saved PNG pixel grid)
+        canvas_w, canvas_h = fig.canvas.get_width_height()
 
         if ax1 is not None:
-            bb = ax1.get_window_extent(renderer=renderer)
+            # Axes bounding box in display (pixel) coords, relative to the canvas
+            bb = ax1.bbox
+            xlim0, xlim1 = ax1.get_xlim()
+
             meta = {
-                "png_w": png_w,
+                "xlim0": float(xlim0),
+                "xlim1": float(xlim1),
+                "unit": str(unit),
+                "canvas_w": float(canvas_w),
+                "canvas_h": float(canvas_h),
                 "ax1_x0": float(bb.x0),
                 "ax1_x1": float(bb.x1),
             }
 
             key = f"{start:.6f}|{end:.6f}|{R500:.6f}|{alt_m}|{medium}|{unit}|{flux}|{theme}|{int(show1d)}|{int(show2d)}"
             RENDER_META[key] = meta
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
-        plt.close(fig)
-        gc.collect()
-        return buf.getvalue()
 
     # Tellurics (AIR Å)
     twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
@@ -1245,8 +1252,85 @@ def render_segment_png(
 
 
 
+    
+    # --- store axis pixel metadata for hover mapping (always) ---
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    png_w = float(fig.bbox.width)
+
+    if ax1 is not None:
+        bb = ax1.get_window_extent(renderer=renderer)
+        xlim0, xlim1 = ax1.get_xlim()
+
+        meta = {
+            "xlim0": float(xlim0),
+            "xlim1": float(xlim1),
+            "png_w": png_w,
+            "ax1_x0": float(bb.x0),
+            "ax1_x1": float(bb.x1),
+        }
+
+        key = f"{start:.6f}|{end:.6f}|{R500:.6f}|{alt_m}|{medium}|{unit}|{flux}|{theme}|{int(show1d)}|{int(show2d)}"
+        RENDER_META[key] = meta
+
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=DPI, transparent=transparent)
+    fig.savefig(buf, format="png", transparent=transparent)
+
+    # ---- Append hidden wavelength barcode strip to PNG (for hover wavelength decode) ----
+    # Encodes the x-axis data coordinate at each PNG pixel column into a 1px-high RGBA strip
+    # appended to the bottom of the PNG. Frontend reads this to map mouse-x -> wavelength.
+    try:
+        # Need renderer + axis bbox in canvas pixels
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+
+        if ax1 is not None:
+            bb = ax1.get_window_extent(renderer=renderer)
+            canvas_w, canvas_h = fig.canvas.get_width_height()
+
+            # Open saved PNG from buffer
+            buf.seek(0)
+            im = Image.open(buf).convert("RGBA")
+            png_w, png_h = im.size
+
+            # Scale bbox coords from canvas pixels -> png pixels
+            sx = (png_w / canvas_w) if canvas_w else 1.0
+
+            x0 = int(max(0, min(png_w - 1, round(bb.x0 * sx))))
+            x1 = int(max(0, min(png_w,     round(bb.x1 * sx))))
+            y_ref = 0.5 * (bb.y0 + bb.y1)  # canvas pixel y (mid-axis)
+            inv = ax1.transData.inverted()
+
+            import numpy as _np
+            bar = _np.zeros((HOVER_BAR_H, png_w, 4), dtype=_np.uint8)
+            bar[:, :, 3] = 255
+
+            for xpng in range(x0, x1):
+                # Convert png x -> canvas x
+                xcan = (xpng + 0.5) / sx if sx else (xpng + 0.5)
+                dx, _ = inv.transform((xcan, y_ref))
+                if not _np.isfinite(dx):
+                    continue
+                v = int(round(float(dx) * HOVER_BAR_SCALE))
+                if v < 0:
+                    v = 0
+                elif v > 0xFFFFFF:
+                    v = 0xFFFFFF
+                bar[:, xpng, 0] = (v >> 16) & 0xFF
+                bar[:, xpng, 1] = (v >> 8) & 0xFF
+                bar[:, xpng, 2] = v & 0xFF
+
+            rgba = _np.array(im, dtype=_np.uint8)
+            rgba2 = _np.vstack([rgba, bar])
+            im2 = Image.fromarray(rgba2, mode="RGBA")
+
+            out = io.BytesIO()
+            im2.save(out, format="PNG")
+            buf = out
+    except Exception:
+        # If anything goes wrong, fall back to the original PNG
+        pass
+
     plt.close(fig)
     gc.collect()
     return buf.getvalue()
@@ -1560,3 +1644,70 @@ def hover_json(
 def favicon():
     return FileResponse(os.path.join(HERE, "favicon.svg"))
 
+
+
+# ----------------------------
+# Render metadata for accurate hover mapping
+# ----------------------------
+
+@app.get("/render_meta.json", response_class=JSONResponse)
+def render_meta_json(
+    start: float,
+    width: Optional[float] = None,
+    R500: Optional[float] = None,
+    alt: Optional[int] = 2500,
+    medium: Optional[str] = "air",
+    unit: Optional[str] = "A",
+    flux: Optional[str] = "norm",
+    theme: Optional[str] = "light",
+    show1d: Optional[int] = 1,
+    show2d: Optional[int] = 1,
+):
+    """Return last-rendered axis pixel bounds for a given render configuration.
+
+    The frontend uses this to convert mouse x-pixels into wavelength coordinates
+    consistent with the Matplotlib axis (fixes the systematic hover offset caused
+    by figure margins).
+    """
+    try:
+        start = float(start)
+        width = float(width) if width is not None else DEFAULT_WIDTH_A
+        R500 = DEFAULT_R500 if (R500 is None) else float(R500)
+
+        # clamp exactly like /segment.png
+        start = max(WMIN, min(start, WMAX - 0.1))
+        width = max(0.1, min(width, WMAX - start))
+        end = start + width
+
+        alt_m = int(alt) if int(alt) in (0, 2500) else 2500
+
+        # sanitize
+        medium = (medium or "air").lower()
+        if medium not in ("air", "vac"):
+            medium = "air"
+
+        unit = (unit or "A")
+        if unit not in ("A", "nm"):
+            unit = "A"
+
+        flux = (flux or "norm")
+        if flux not in ("norm", "cgs", "flam"):
+            flux = "norm"
+
+        theme = (theme or "light")
+        if theme not in ("light", "dark", "auto"):
+            theme = "light"
+
+        s1 = int(show1d) if show1d is not None else 1
+        s2 = int(show2d) if show2d is not None else 1
+
+        key = f"{start:.6f}|{end:.6f}|{R500:.6f}|{alt_m}|{medium}|{unit}|{flux}|{theme}|{int(s1)}|{int(s2)}"
+        meta = RENDER_META.get(key)
+
+        if not meta:
+            return {"ok": False, "reason": "meta_not_found"}
+
+        return {"ok": True, **meta}
+
+    except Exception as e:
+        return {"ok": False, "reason": str(e)}
