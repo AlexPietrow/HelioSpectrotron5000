@@ -924,38 +924,29 @@ def render_segment_png(
     # Empty slice safety
     if w_air.size == 0:
         if ax1 is not None:
-            ax1.text(0.5, 0.5, "Empty slice", ha="center", va="center",
-                     transform=ax1.transAxes, color=theme_dict["text"])
+            ax1.text(
+                0.5, 0.5, "Empty slice",
+                ha="center", va="center",
+                transform=ax1.transAxes,
+                color=theme_dict["text"],
+            )
             ax1.axis("off")
         if ax2 is not None:
-            ax2.text(0.5, 0.5, "Empty slice", ha="center", va="center",
-                     transform=ax2.transAxes, color=theme_dict["text"])
+            ax2.text(
+                0.5, 0.5, "Empty slice",
+                ha="center", va="center",
+                transform=ax2.transAxes,
+                color=theme_dict["text"],
+            )
             ax2.axis("off")
 
-
-        # --- store axis pixel metadata for hover mapping ---
-        fig.canvas.draw()
-
-        # Canvas pixel size (this matches the saved PNG pixel grid)
-        canvas_w, canvas_h = fig.canvas.get_width_height()
-
-        if ax1 is not None:
-            # Axes bounding box in display (pixel) coords, relative to the canvas
-            bb = ax1.bbox
-            xlim0, xlim1 = ax1.get_xlim()
-
-            meta = {
-                "xlim0": float(xlim0),
-                "xlim1": float(xlim1),
-                "unit": str(unit),
-                "canvas_w": float(canvas_w),
-                "canvas_h": float(canvas_h),
-                "ax1_x0": float(bb.x0),
-                "ax1_x1": float(bb.x1),
-            }
-
-            key = f"{start:.6f}|{end:.6f}|{R500:.6f}|{alt_m}|{medium}|{unit}|{flux}|{theme}|{int(show1d)}|{int(show2d)}"
-            RENDER_META[key] = meta
+        # Return immediately (avoid downstream interp/plot logic on empty arrays)
+        buf.seek(0)
+        buf.truncate(0)
+        fig.savefig(buf, format="png", transparent=transparent)
+        plt.close(fig)
+        gc.collect()
+        return buf.getvalue()
 
     # Tellurics (AIR Å)
     twav, tint = TELLURICS.get(int(alt_m), TELLURICS[2500])
@@ -1275,60 +1266,66 @@ def render_segment_png(
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", transparent=transparent)
-
-    # ---- Append hidden wavelength barcode strip to PNG (for hover wavelength decode) ----
-    # Encodes the x-axis data coordinate at each PNG pixel column into a 1px-high RGBA strip
-    # appended to the bottom of the PNG. Frontend reads this to map mouse-x -> wavelength.
+    # ---- Append hidden wavelength barcode strip to PNG (does NOT affect plotting) ----
+    # This encodes the plotted x-axis coordinate (in the current axis units) into RGB
+    # values of a narrow strip appended at the bottom of the PNG. The frontend decodes
+    # this to get a drift-free hover wavelength mapping.
     try:
-        # Need renderer + axis bbox in canvas pixels
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-
         if ax1 is not None:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
             bb = ax1.get_window_extent(renderer=renderer)
+
+            # Canvas pixel size (Matplotlib) vs saved PNG pixel grid
             canvas_w, canvas_h = fig.canvas.get_width_height()
 
-            # Open saved PNG from buffer
             buf.seek(0)
             im = Image.open(buf).convert("RGBA")
             png_w, png_h = im.size
 
-            # Scale bbox coords from canvas pixels -> png pixels
-            sx = (png_w / canvas_w) if canvas_w else 1.0
+            sx = (png_w / canvas_w) if canvas_w > 0 else 1.0
 
             x0 = int(max(0, min(png_w - 1, round(bb.x0 * sx))))
             x1 = int(max(0, min(png_w,     round(bb.x1 * sx))))
-            y_ref = 0.5 * (bb.y0 + bb.y1)  # canvas pixel y (mid-axis)
+            y_ref = 0.5 * (bb.y0 + bb.y1)  # canvas pixel y
+
             inv = ax1.transData.inverted()
 
-            import numpy as _np
-            bar = _np.zeros((HOVER_BAR_H, png_w, 4), dtype=_np.uint8)
+            bar = np.zeros((HOVER_BAR_H, png_w, 4), dtype=np.uint8)
             bar[:, :, 3] = 255
 
             for xpng in range(x0, x1):
                 # Convert png x -> canvas x
-                xcan = (xpng + 0.5) / sx if sx else (xpng + 0.5)
+                xcan = (xpng + 0.5) / sx if sx != 0 else (xpng + 0.5)
                 dx, _ = inv.transform((xcan, y_ref))
-                if not _np.isfinite(dx):
+                if not np.isfinite(dx):
                     continue
+
                 v = int(round(float(dx) * HOVER_BAR_SCALE))
                 if v < 0:
                     v = 0
-                elif v > 0xFFFFFF:
+                if v > 0xFFFFFF:
                     v = 0xFFFFFF
+
                 bar[:, xpng, 0] = (v >> 16) & 0xFF
                 bar[:, xpng, 1] = (v >> 8) & 0xFF
                 bar[:, xpng, 2] = v & 0xFF
 
-            rgba = _np.array(im, dtype=_np.uint8)
-            rgba2 = _np.vstack([rgba, bar])
+            rgba = np.array(im, dtype=np.uint8)
+            rgba2 = np.vstack([rgba, bar])
             im2 = Image.fromarray(rgba2, mode="RGBA")
 
             out = io.BytesIO()
             im2.save(out, format="PNG")
-            buf = out
+            out.seek(0)
+
+            # Write back into the existing buffer (do not rebind 'buf')
+            buf.seek(0)
+            buf.truncate(0)
+            buf.write(out.read())
+            buf.seek(0)
     except Exception:
-        # If anything goes wrong, fall back to the original PNG
+        # If anything goes wrong, fall back to the original image buffer.
         pass
 
     plt.close(fig)

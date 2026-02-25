@@ -6,10 +6,13 @@ HS5000 is intended for wavelength calibration, line identification, and resoluti
 
 ## Citing HS5000
 
-If you use HelioSpectrotron 5000 (HS5000) in a scientific publication, please cite the underlying reference datasets and methods listed below, as appropriate for your application.
-A dedicated reference paper describing HS5000 is currently in preparation.
+If you use HS5000 in a scientific publication, please cite the underlying reference datasets and methods listed below, as appropriate for your application.
 
 ### References
+
+- Pietrow, A.G.M. (2026), *Open Journal of Astrophysics*, *9* 
+  HS5000 Reference paper
+  https://ui.adsabs.harvard.edu/abs/2026arXiv260220101P/abstract
 
 - Neckel, H., & Labs, D. (1984), *Solar Physics*, **90**, 205  
   Solar disk-centre reference spectrum  
