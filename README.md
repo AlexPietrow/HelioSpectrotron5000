@@ -10,7 +10,7 @@ If you use HS5000 in a scientific publication, please cite the underlying refere
 
 ### References
 
-- Pietrow, A.G.M. (2026), *Open Journal of Astrophysics*, *9* 
+- Pietrow, A.G.M. (2026), *Open Journal of Astrophysics*, *9*  
   HS5000 Reference paper
   https://ui.adsabs.harvard.edu/abs/2026arXiv260220101P/abstract
 
