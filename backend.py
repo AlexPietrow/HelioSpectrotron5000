@@ -25,7 +25,10 @@ Controls (via query params):
 - refinf=0/1     : overlay the un-convolved reference spectrum (R=∞) on top of the convolved spectrum
 - unit=A/nm      : plotting unit only (selection in Å)
 - R500           : resolving power at 500 nm; uses FWHM_A = 5000 / R500
-- flux=norm/cgs/flam : normalized or absolute (per Hz / per Å)
+- flux=norm/cgs/flam : intensity scale: continuum-normalized or absolute I_nu / I_lambda
+                       (param name kept as 'flux' for URL compatibility; the data are
+                       disk-center specific intensities, not fluxes)
+- mark=<Å>       : optional wavelength (in requested medium, Å) to mark with a vertical line + label
 - theme=light/dark/auto : plot theme (auto currently treated as light unless frontend passes)
 - transparent=0/1 : if 1, figure background is transparent
 
@@ -94,6 +97,7 @@ THEME_LIGHT = {
     "ref": "#000000",
     "tell": "#ff0000",
     "grid": "#e5e7eb",
+    "mark": "#d90368",   # clicked-minimum marker (distinct from telluric red)
 }
 THEME_DARK = {
     "bg": "#0b1220",
@@ -105,6 +109,7 @@ THEME_DARK = {
     "ref": "#ffffff",
     "tell": "#ff3b3b",   # red but pops on dark
     "grid": "#334155",
+    "mark": "#ff4fa3",   # clicked-minimum marker (distinct from telluric red)
 }
 
 # Resolve paths relative to this file
@@ -799,6 +804,88 @@ except Exception as e:
 # ----------------------------
 # Theme helpers
 # ----------------------------
+# ----------------------------
+# Local-minimum finder and line identification
+# ----------------------------
+
+def nearest_local_min(w: np.ndarray, y: np.ndarray, x0: float, max_dist_A: float = 0.5):
+    """Find the nearest *true* local minimum of y(w) starting from wavelength x0.
+
+    Walks downhill from the sample closest to x0 until both neighbors are higher,
+    then refines the minimum position with a parabola through the three samples.
+    This avoids the classic overshoot of a plain argmin in a fixed window, where a
+    shallow line sitting on the wing of a stronger neighbor gets skipped.
+
+    Returns (x_min, y_min) or (None, None) if no minimum lies within max_dist_A.
+    """
+    w = np.asarray(w, dtype=float)
+    y = np.asarray(y, dtype=float)
+    n = w.size
+    if n < 3:
+        return None, None
+
+    i = int(np.searchsorted(w, x0))
+    i = int(np.clip(i, 1, n - 2))
+    if abs(w[i - 1] - x0) < abs(w[i] - x0):
+        i -= 1
+    i = int(np.clip(i, 1, n - 2))
+
+    for _ in range(n):
+        l, c, r = y[i - 1], y[i], y[i + 1]
+        if not (np.isfinite(l) and np.isfinite(c) and np.isfinite(r)):
+            break
+        if l < c and l <= r:
+            i -= 1
+        elif r < c:
+            i += 1
+        else:
+            break
+        if i <= 0 or i >= n - 1:
+            break
+        if abs(w[i] - x0) > max_dist_A:
+            return None, None
+
+    i = int(np.clip(i, 1, n - 2))
+    l, c, r = y[i - 1], y[i], y[i + 1]
+    x_min, y_min = float(w[i]), float(c)
+
+    # Parabolic refinement (sub-sample position)
+    denom = (l - 2.0 * c + r)
+    if np.isfinite(denom) and denom > 0:
+        dx = 0.5 * (l - r) / denom          # in units of samples, in [-1, 1]
+        dx = float(np.clip(dx, -1.0, 1.0))
+        dw = (w[i + 1] - w[i]) if dx >= 0 else (w[i] - w[i - 1])
+        x_min = float(w[i] + dx * dw)
+        y_min = float(c - 0.25 * (l - r) * dx)
+
+    return x_min, y_min
+
+
+def identify_line_air(x_air: float, R500: float, tol_A: Optional[float] = None):
+    """Return (label, list_wavelength_air) of the closest catalog line to x_air (AIR Å).
+
+    Searches both the Moore (2935-8770 Å) and Babcock & Moore (6600-13495 Å) lists.
+    The tolerance grows with the instrumental FWHM so degraded spectra still match.
+    Returns (None, None) if nothing lies within tolerance.
+    """
+    if tol_A is None:
+        fwhm = (x_air / R500) if (np.isfinite(R500) and R500 > 0 and R500 < 1e8) else 0.0
+        tol_A = max(0.10, 0.6 * fwhm)
+
+    best_lab, best_w, best_d = None, None, np.inf
+    for wav, ids in ((old_wav, old_ids), (new_wav, new_ids)):
+        if wav is None or ids is None or len(wav) == 0:
+            continue
+        j = int(np.argmin(np.abs(np.asarray(wav, dtype=float) - x_air)))
+        d = abs(float(wav[j]) - x_air)
+        if d < best_d:
+            best_d, best_lab, best_w = d, str(ids[j]), float(wav[j])
+
+    if best_lab is None or best_d > tol_A:
+        return None, None
+    return best_lab, best_w
+
+
 def _pick_theme(theme: str) -> Dict[str, str]:
     t = (theme or "light").strip().lower()
     if t == "dark":
@@ -859,6 +946,7 @@ def render_segment_png(
     show1d: bool = True,
     show2d: bool = True,
     c2d: int = 0,
+    mark: Optional[float] = None,
 ) -> bytes:
     """Render [start,end] slice.
 
@@ -1047,7 +1135,7 @@ def render_segment_png(
                 _style_legend(leg, theme_dict)
 
         r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
-        ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, flux={flux})")
+        ax1.set_title(f"{start_plot:.3f}–{end_plot:.3f} {unit_label}   (R@500nm={r_txt}, alt={alt_m} m, intensity={flux})")
 
         if ax2 is None:
             ax1.set_xlabel(f"Wavelength [{unit_label}]")
@@ -1107,6 +1195,32 @@ def render_segment_png(
                         ha="center", va="bottom",
                         color=spec_col,
                     )
+
+        # ---- Clicked local-minimum marker (only on ax1) ----
+        if (ax1 is not None) and (mark is not None) and np.isfinite(mark) and (start <= mark <= end):
+            mark_air = float(vac_to_air_A(np.array([mark], dtype=float))[0]) if medium in ("vac", "vacuum") else float(mark)
+            lab, _lw = identify_line_air(mark_air, R500)
+            mark_col = theme_dict.get("mark", "#e6007e")
+            x_mark_plot = (mark / 10.0) if plot_in_nm else mark
+            ax1.axvline(x_mark_plot, lw=1.3, ls="--", alpha=0.95, zorder=4, color=mark_col)
+            if plot_in_nm:
+                txt = f"{x_mark_plot:.4f} nm"
+            else:
+                txt = f"{x_mark_plot:.3f} Å"
+            txt += f"  {lab}" if lab else "  ??"
+            # keep the label inside the axes: flip side near the right edge
+            frac = (mark - start) / max(end - start, 1e-9)
+            ha = "left" if frac < 0.8 else "right"
+            dx = 0.004 if ha == "left" else -0.004
+            ax1.text(
+                frac + dx, 0.97, txt,
+                transform=ax1.transAxes,
+                ha=ha, va="top", fontsize=9, fontweight="bold",
+                color=mark_col, zorder=5,
+                bbox=dict(boxstyle="round,pad=0.25", fc=theme_dict["panel"], ec=mark_col, lw=0.8, alpha=0.9),
+            )
+            if ax2 is not None:
+                ax2.axvline(x_mark_plot, lw=1.3, ls="--", alpha=0.95, zorder=4, color=mark_col)
 
     # --- 2D panel ---
     if ax2 is not None:
@@ -1399,6 +1513,7 @@ def segment_png(
     show1d: Optional[int] = 1,      # 0/1
     show2d: Optional[int] = 1,      # 0/1
     c2d: Optional[int] = 0,          # 2D contrast step
+    mark: Optional[float] = None,    # wavelength (Å, in `medium`) to mark with a vertical line + label
 ):
     try:
         start = float(start)
@@ -1435,6 +1550,7 @@ def segment_png(
             show1d=bool(int(show1d)) if show1d is not None else True,
             show2d=bool(int(show2d)) if show2d is not None else True,
             c2d=int(c2d) if c2d is not None else 0,
+            mark=(float(mark) if (mark is not None and np.isfinite(float(mark))) else None),
         )
         return Response(
             content=png,
@@ -1600,27 +1716,24 @@ def hover_json(
         y = float(np.interp(x_air_c, w, y_final))
 
 
-        # --- local minimum around cursor (in AIR Å) ---
-        LOCAL_MIN_HALF_WIN_A = 0.5  # +/- 0.5 Å
-
-        m = (w >= x_air_c - LOCAL_MIN_HALF_WIN_A) & (w <= x_air_c + LOCAL_MIN_HALF_WIN_A)
-        if np.any(m):
-            yy = y_final[m]
-            ww = w[m]
-            j = int(np.nanargmin(yy))
-            locmin_y = float(yy[j])
-            locmin_air = float(ww[j])
-
+        # --- nearest local minimum around cursor (in AIR Å) ---
+        # Walk downhill from the cursor to the nearest true dip instead of taking the
+        # global argmin in a fixed window (which overshoots on slanted, shallow lines).
+        LOCAL_MIN_MAX_DIST_A = 0.5
+        locmin_air, locmin_y = nearest_local_min(w, y_final, x_air_c, LOCAL_MIN_MAX_DIST_A)
+        locmin_x_disp = None
+        locmin_id = None
+        locmin_id_wav = None
+        if locmin_air is not None:
             # convert local-min wavelength to requested medium
             locmin_disp_A = float(air_to_medium_A(np.array([locmin_air], dtype=float), medium)[0])
-
             # and to requested plotting unit
             locmin_x_disp = (locmin_disp_A / 10.0) if (u in ("nm","nanometer","nanometers")) else locmin_disp_A
-        else:
-            locmin_y = None
-            locmin_x_disp = None
-
-
+            lab, lw_air = identify_line_air(locmin_air, R500)
+            if lab is not None:
+                locmin_id = lab
+                lw_disp_A = float(air_to_medium_A(np.array([lw_air], dtype=float), medium)[0])
+                locmin_id_wav = (lw_disp_A / 10.0) if (u in ("nm","nanometer","nanometers")) else lw_disp_A
 
         return JSONResponse({
             "ok": True,
@@ -1629,6 +1742,8 @@ def hover_json(
             "y": y,
             "locmin_x": locmin_x_disp,
             "locmin_y": locmin_y,
+            "locmin_id": locmin_id,
+            "locmin_id_wav": locmin_id_wav,
         }, status_code=200)
 
 

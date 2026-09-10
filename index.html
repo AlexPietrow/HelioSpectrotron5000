@@ -127,6 +127,8 @@
       font-size:12px;
       color:var(--text);
     }
+    .pill[hidden]{display:none;}
+    button.pill{cursor:pointer;}
     .divider{height:10px;}
 
     /* --- prettier grouped controls (bracket via fieldset/legend) --- */
@@ -337,9 +339,9 @@
             <button id="btnWin5" title="×5 window">×5</button>
           </div>
           <input id="windowInput" class="narrowTiny" type="number" step="0.001" />
-          <span class="label">(<span id="unitTextW">Å</span>)</span>
+          <span class="label">(<span id="unitTextWin">Å</span>)</span>
         </div>
-        <div class="subtitle" style="margin-top:6px;">Moddify window size</div>
+        <div class="subtitle" style="margin-top:6px;">Modify window size</div>
       </fieldset>
 
       <fieldset class="field">
@@ -408,13 +410,13 @@
 
 
       <fieldset class="field" style="min-width:auto;">
-        <legend>Flux</legend>
+        <legend>Intensity</legend>
         <div class="seg">
-          <button id="btnFluxNorm" class="active" title="Continuum-normalized spectrum">Normalized</button>
-          <button id="btnFluxCgs" title="Absolute intensity (cgs; Fν)">Fν</button>
-          <button id="btnFluxFlam" title="Absolute intensity (cgs; Fλ)">Fλ</button>
+          <button id="btnFluxNorm" class="active" title="Continuum-normalized intensity (I/Ic)">Normalized</button>
+          <button id="btnFluxCgs" title="Absolute disk-center intensity (cgs; Iν, per Hz)">Iν</button>
+          <button id="btnFluxFlam" title="Absolute disk-center intensity (cgs; Iλ, per Å)">Iλ</button>
         </div>
-        <div class="subtitle" style="margin-top:6px;">Units for Flux.</div>
+        <div class="subtitle" style="margin-top:6px;">Intensity scale (disk-center, not flux).</div>
       </fieldset>
 
       <fieldset class="field" style="min-width:auto;">
@@ -502,7 +504,9 @@
     <div class="imgwrap">
       <img id="img" alt="segment" />
       <div class="hoverline">
-        <div class="pill" id="hoverPill">hover: —</div>
+        <div class="pill" id="hoverPill" title="Click the plot to mark the nearest local minimum">hover: —</div>
+        <div class="pill" id="markPill" hidden>mark: —</div>
+        <button id="btnClearMark" class="pill" hidden title="Remove the marker">clear mark</button>
         <div class="pill" id="rangePill">range: —</div>
       </div>
       <div id="status" class="status"></div>
@@ -597,6 +601,7 @@
         <span class="pill">Black line represents the solar spectrum, the red line represents the telluric spectrum</span>
         <span class="pill">Tip: press Enter in any input to re-render</span>
         <span class="pill">Hover the plot to read wavelength + intensity</span>
+        <span class="pill">Click the plot to mark the nearest line minimum and its identification</span>
         <span class="pill">Use “CSV” to copy wavelength + intensity</span>
         <span class="pill">Press “Dark” for dark mode</span>
       </div>
@@ -657,11 +662,11 @@
       </details>
 
       <details style="border:1px solid var(--border); background:var(--btn); border-radius:12px; padding:10px 12px; margin:10px 0;">
-        <summary style="cursor:pointer; font-weight:700;">Flux modes and export</summary>
+        <summary style="cursor:pointer; font-weight:700;">Intensity modes and export</summary>
         <div style="margin-top:8px;">
           <ul style="margin:0; padding-left:18px;">
-            <li><strong>Normalized</strong>: continuum-normalized intensity.</li>
-            <li><strong>Fν / Fλ</strong>: absolute units (as provided by the backend).</li>
+            <li><strong>Normalized</strong>: continuum-normalized intensity (I/I<sub>c</sub>).</li>
+            <li><strong>Iν / Iλ</strong>: absolute disk-center specific intensity in cgs units (per Hz or per Å). Note that these are intensities, not fluxes.</li>
             <li><strong>PNG</strong>: downloads the currently displayed plot.</li>
             <li><strong>CSV</strong>: opens a modal with wavelength + y values (TSV) for copy/paste.</li>
           </ul>
@@ -692,7 +697,7 @@
 <div id="ackModal">
   <div id="ackCard">
     <div id="ackHead">
-      <div style="font-weight:700;">Acknowledgments | Sofware version 1.0</div>
+      <div style="font-weight:700;">Acknowledgments | Software version 1.1</div>
       <div style="display:flex; gap:10px; align-items:center;">
         <button id="btnCloseAck" style="padding:8px 10px; border-radius:10px; height:36px;">Close</button>
       </div>
@@ -815,6 +820,7 @@ console.log("HS5000", window.HS5000_HOVER_VERSION);
   let c2d = 0;        // 2D contrast step (-20..+20)
   // Window: store the ACTUAL displayed base window in Å (already includes multiplier)
   let windowA = DEF_W_A;       // (Å) actual window value shown in input
+  let markA = null;            // (Å, in current medium) clicked local-minimum marker; null = none
   let windowMult = 1;          // ×1, ×2, ×5 (UI only; applied by updating windowA)
 
   let startA = WMIN_A;
@@ -827,7 +833,7 @@ console.log("HS5000", window.HS5000_HOVER_VERSION);
   let legendOn = false;
   let firstLoadLegend = true;  // show legend once on first successful render
   let unit = "A";              // "A" or "nm" (display only)
-  let flux = "norm";           // "norm" (normalized), "cgs" (Fν), or "flam" (Fλ)
+  let flux = "norm";           // intensity scale: "norm" (I/Ic), "cgs" (Iν), or "flam" (Iλ); param name kept as "flux" for URL compatibility
 
 
   // If true, the initial window came from URL params (start/width)
@@ -917,6 +923,9 @@ console.log("HS5000", window.HS5000_HOVER_VERSION);
   const img = el("img");
   const status = el("status");
   const hoverPill = el("hoverPill");
+  const markPill = el("markPill");
+  const btnClearMark = el("btnClearMark");
+  const unitTextWin = el("unitTextWin");
   const rangePill = el("rangePill");
 
   // data modal
@@ -1162,6 +1171,7 @@ if (jumpSelect){
 
     unitTextC.textContent = (unit === "nm") ? "nm" : "Å";
     unitTextW.textContent = (unit === "nm") ? "nm" : "Å";
+    unitTextWin.textContent = (unit === "nm") ? "nm" : "Å";
     unitTextS.textContent = (unit === "nm") ? "nm" : "Å";
 
     const startDisp = startA * f;
@@ -1216,6 +1226,7 @@ if (jumpSelect){
     u.searchParams.set("show1d", String(show1d));
     u.searchParams.set("show2d", String(show2d));
     u.searchParams.set("c2d", String(c2d));
+    if (markA !== null && isFinite(markA)) u.searchParams.set("mark", markA.toFixed(4));
     u.searchParams.set("transparent", "0");
     u.searchParams.set("_", String(Date.now()));
     return u.toString();
@@ -1264,6 +1275,8 @@ function buildShareUrl(){
   u.searchParams.set("step", fmtUrl(stepA));
   u.searchParams.set("window", fmtUrl(windowA));
   u.searchParams.set("winmult", String(windowMult));
+  if (markA !== null && isFinite(markA)) u.searchParams.set("mark", markA.toFixed(4));
+  else u.searchParams.delete("mark");
 
   // Never include cache-busters in share URLs
   u.searchParams.delete("_");
@@ -1324,6 +1337,8 @@ function applyStateFromUrl(){
   if (s2 !== null) show2d = (s2 === 1) ? 1 : 0;
   if (cc !== null) c2d = clamp(cc, -20, 20);
   if (!show1d && !show2d){ show1d = 1; }
+  const mk = getNum("mark");
+  if (mk !== null) markA = clamp(mk, WMIN_A, WMAX_A);
 
   // Theme from URL should override local preference
   if (th === "dark" || th === "light") applyTheme(th);
@@ -1369,7 +1384,7 @@ function applyStateFromUrl(){
       `center=${(centerA*f).toFixed(3)} ${(unit==="nm"?"nm":"Å")}  ` +
       `start=${(startA*f).toFixed(3)}  end=${(endA*f).toFixed(3)}  ` +
       `width=${(widthA*f).toFixed(3)}  step=${(stepA*f).toFixed(3)}\n` +
-      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  flux=${flux}  medium=${medium}\n` +
+      `R@500nm=${(r500>=1e8) ? "∞" : Math.round(r500)}  alt=${alt} m  intensity=${flux}  medium=${medium}\n` +
       `labels=${labelsOn?1:0}  legend=${(firstLoadLegend||legendOn)?1:0}`;
 
     const url = buildUrl();
@@ -1496,7 +1511,8 @@ function applyStateFromUrl(){
     return await resp.json();
   }
 
-  function updateHover(ev){
+  // Returns the plotted-axis wavelength (in the current display unit) under the mouse, or null.
+  function lamFromEvent(ev){
     const rect = img.getBoundingClientRect();
 
     // Border-aware coordinates inside the *image content* box (CSS pixels)
@@ -1507,17 +1523,11 @@ function applyStateFromUrl(){
     const innerW = rect.width - bl - br;
     const xcss = ev.clientX - rect.left - bl;
 
-    if (!(innerW > 0) || xcss < 0 || xcss > innerW) {
-      hoverPill.textContent = "hover: —";
-      return;
-    }
+    if (!(innerW > 0) || xcss < 0 || xcss > innerW) return null;
 
     // Map CSS x -> PNG native pixel x (stable even when the image is scaled)
     const natW = img.naturalWidth;
-    if (!(natW > 0)) {
-      hoverPill.textContent = "hover: —";
-      return;
-    }
+    if (!(natW > 0)) return null;
     const xpng = xcss * (natW / innerW);
 
     // First choice: decode the exact axis x-value from the hidden PNG barcode strip (if present).
@@ -1547,6 +1557,15 @@ function applyStateFromUrl(){
     }
 
     // lamAxis is in the plotted axis unit already (Å when unit='A', nm when unit='nm')
+    return lamAxis;
+  }
+
+  function updateHover(ev){
+    const lamAxis = lamFromEvent(ev);
+    if (lamAxis === null) {
+      hoverPill.textContent = "hover: —";
+      return;
+    }
     lastHoverDisp = lamAxis;
 
     // Throttle network calls: at most one in-flight per animation frame
@@ -1579,7 +1598,8 @@ function applyStateFromUrl(){
             typeof js.locmin_y === "number" && isFinite(js.locmin_y)){
           const lmX = (unit === "nm") ? Number(js.locmin_x).toFixed(4) : Number(js.locmin_x).toFixed(3);
           const lmY = (flux === "norm") ? Number(js.locmin_y).toFixed(4) : Number(js.locmin_y).toExponential(6);
-          extra = `  |  min: ${lmX} ${uLbl}, ${lmY}`;
+          const lmId = (typeof js.locmin_id === "string" && js.locmin_id) ? js.locmin_id : "??";
+          extra = `  |  min: ${lmX} ${uLbl}, ${lmY} (${lmId})`;
         }
 
         hoverPill.textContent = `hover: ${xTxt} ${uLbl}, ${yTxt}${extra}`;
@@ -1588,6 +1608,43 @@ function applyStateFromUrl(){
       }
     });
 }
+
+  // Click: snap to the nearest local minimum and re-render with a marker + line id
+  let markId = null;
+  function setMarkPill(){
+    if (markA === null || !isFinite(markA)) {
+      markPill.hidden = true;
+      btnClearMark.hidden = true;
+      return;
+    }
+    const f = factorFromA();
+    const uLbl = (unit === "nm") ? "nm" : "Å";
+    const xTxt = (unit === "nm") ? (markA*f).toFixed(4) : (markA*f).toFixed(3);
+    markPill.textContent = `mark: ${xTxt} ${uLbl}${markId ? " · " + markId : " · ??"}`;
+    markPill.hidden = false;
+    btnClearMark.hidden = false;
+  }
+
+  img.addEventListener("click", async (ev) => {
+    const lamAxis = lamFromEvent(ev);
+    if (lamAxis === null) return;
+    try{
+      const js = await fetchHover(lamAxis);
+      if (!js || !js.ok) return;
+      let xDisp = (typeof js.locmin_x === "number" && isFinite(js.locmin_x)) ? js.locmin_x : js.x;
+      markA = clamp(xDisp * factorToA(), WMIN_A, WMAX_A);
+      markId = (typeof js.locmin_id === "string" && js.locmin_id) ? js.locmin_id : null;
+      setMarkPill();
+      render();
+    }catch(e){ /* ignore */ }
+  });
+
+  btnClearMark.addEventListener("click", () => {
+    markA = null;
+    markId = null;
+    setMarkPill();
+    render();
+  });
 
   img.addEventListener("mousemove", updateHover);
   img.addEventListener("mouseleave", () => { 
@@ -1877,6 +1934,7 @@ function applyStateFromUrl(){
   clampState();
   syncUIFromState();
   populateJumpDropdown();
+  setMarkPill();
   render();
 })();
 </script>
