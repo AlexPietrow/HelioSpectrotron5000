@@ -3,6 +3,10 @@
 """
 Spectrum scroller backend (FastAPI)
 
+Solar spectrum: Hamburg FTS disk-center atlas via ISPy, by default with the Kitt Peak
+tellurics removed (telfree_atlas.npy, see ATLAS_MODE), so that solar * TAPAS gives a
+ground-based spectrum for the chosen altitude.
+
 Loads precomputed TAPAS tellurics from:
   telat_alt0.npy  (alt=0 m)
   telat_alt1.npy  (alt=2500 m)
@@ -126,6 +130,14 @@ from ISPy.spec import atlas as ispy_atlas  # noqa: E402
 TELL_FILE_ALT0 = os.environ.get("TELL_FILE_ALT0", os.path.join(HERE, "telat_alt0.npy"))  # 0 m
 TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1.npy"))  # 2500 m
 
+# Telluric-free atlas (Hamburg disk-center atlas with Kitt Peak tellurics removed,
+# fitted with the 2500 m TAPAS model). Shape (3, N): raw ISPy wavelength [A, air],
+# telluric-free I/I_c, flag (0 clean, 1 telluric >2%, 2 >10%, 3 saturated and
+# interpolated, -1 beyond TAPAS coverage and not corrected).
+# ATLAS_MODE=telfree (default) uses it, ATLAS_MODE=original uses the ISPy atlas as is.
+TELFREE_FILE = os.environ.get("TELFREE_FILE", os.path.join(HERE, "telfree_atlas.npy"))
+ATLAS_MODE = os.environ.get("ATLAS_MODE", "telfree").strip().lower()
+
 # Frontend
 INDEX_HTML = os.environ.get("INDEX_HTML", os.path.join(HERE, "index.html"))
 
@@ -145,6 +157,32 @@ def get_fts():
     a new instance for every fetch.
     """
     return ispy_atlas.atlas()
+
+
+_TELFREE = None
+
+
+def _telfree():
+    """Lazy-load the telluric-free I/I_c table, or None when ATLAS_MODE=original."""
+    global _TELFREE
+    if ATLAS_MODE != "telfree":
+        return None
+    if _TELFREE is None:
+        t = np.load(TELFREE_FILE).astype(float)
+        _TELFREE = (t[0], t[1])
+    return _TELFREE
+
+
+def _swap_telfree(wav: np.ndarray, I: np.ndarray, cont: np.ndarray) -> np.ndarray:
+    """Replace the atlas intensity by the telluric-free one, in the units of `cont`.
+
+    The table holds I/I_c on the raw ISPy grid (nograv=True), so multiplying by the
+    ISPy continuum returned in the requested units gives the absolute intensity.
+    """
+    tf = _telfree()
+    if tf is None or wav.size == 0:
+        return I
+    return np.interp(wav, tf[0], tf[1]) * cont
 
 
 def get_atlas_range() -> Tuple[float, float]:
@@ -174,6 +212,7 @@ def fetch_ispy_air_norm(w0: float, w1: float):
     if wav.size == 0 or I.size == 0 or cont.size == 0:
         return np.array([], dtype=float), np.array([], dtype=float)
 
+    I = _swap_telfree(wav, I, cont)
     cont_safe = np.where(cont > 0, cont, np.nan)
     I_norm = I / cont_safe
     I_norm = np.clip(I_norm, 0, np.nanmax(I_norm))
@@ -203,6 +242,7 @@ def fetch_ispy_air_cgs_fnu(w0: float, w1: float):
     if wav.size == 0 or I.size == 0:
         return np.array([], dtype=float), np.array([], dtype=float)
 
+    I = _swap_telfree(wav, I, np.asarray(cont, dtype=float))
     sel = (wav >= w0) & (wav <= w1)
     return wav[sel], I[sel]
 
@@ -222,6 +262,7 @@ def fetch_ispy_air_cgs_flam(w0: float, w1: float):
     if wav.size == 0 or I.size == 0:
         return np.array([], dtype=float), np.array([], dtype=float)
 
+    I = _swap_telfree(wav, I, np.asarray(cont, dtype=float))
     sel = (wav >= w0) & (wav <= w1)
     return wav[sel], I[sel]
 
