@@ -427,25 +427,36 @@ def _load_telat(path: str) -> Tuple[np.ndarray, np.ndarray]:
 def _strip_smooth_extinction(w: np.ndarray, t: np.ndarray) -> np.ndarray:
     """Remove the smooth Rayleigh/ozone/continuum extinction from a TAPAS transmission.
 
-    The smooth part of tau = -ln(T) is estimated as the minimum per 1 A bin, then the
-    1st percentile over 400 A, smoothed with a 100 A Gaussian. The window is wider than
-    any O2 or H2O band, so band pseudo-continua (overlapping line wings) are kept and only
-    the extinction that the continuum-normalized atlas does not contain is divided out.
+    The smooth part of tau = -ln(T) is estimated as the minimum per 1 A bin (i.e. the
+    maximum transmission per bin), then the 1st percentile over 400 A, smoothed with a
+    100 A Gaussian. The window is wider than any O2 or H2O band, so band pseudo-continua
+    (overlapping line wings) are kept and only the extinction that the continuum-normalized
+    atlas does not contain is divided out.
+
+    Memory-lean on purpose: the tables have ~5.5 million points and this runs at import
+    time, so the correction is applied in place in chunks with no full-size temporaries.
     """
-    tau = -np.log(np.clip(t, 1e-9, 1.0))
     edges = np.arange(w[0], w[-1] + 1.0, 1.0)
     starts = np.searchsorted(w, edges[:-1])
     keep = np.r_[np.diff(starts) > 0, True] & (starts < w.size)
     starts = starts[keep]
     centers = edges[:-1][keep] + 0.5
-    bmin = np.minimum.reduceat(tau, starts)
+    # per-bin max transmission -> per-bin min tau (a few thousand values only)
+    tmax = np.maximum.reduceat(t, starts)
+    bmin = -np.log(np.clip(tmax, 1e-9, 1.0))
     half = 200
     padded = np.pad(bmin, half, mode="edge")
     win = np.lib.stride_tricks.sliding_window_view(padded, 2 * half + 1)
     base = np.percentile(win, 1, axis=1)
     base = convolve_reflect(base, gaussian_kernel_1d(100.0))
-    tau_lines = np.clip(tau - np.interp(w, centers, base), 0.0, None)
-    return np.exp(-tau_lines)
+    # T_lines = exp(-(tau - tau_smooth)) = T * exp(tau_smooth), clipped to <= 1
+    out = np.array(t, dtype=float, copy=True)
+    step = 500_000
+    for i in range(0, out.size, step):
+        j = min(i + step, out.size)
+        out[i:j] *= np.exp(np.interp(w[i:j], centers, base))
+    np.minimum(out, 1.0, out=out)
+    return out
 
 
 # alt in meters
