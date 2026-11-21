@@ -129,6 +129,9 @@ from ISPy.spec import atlas as ispy_atlas  # noqa: E402
 # Telluric files (TAPAS precomputed)
 TELL_FILE_ALT0 = os.environ.get("TELL_FILE_ALT0", os.path.join(HERE, "telat_alt0.npy"))  # 0 m
 TELL_FILE_ALT1 = os.environ.get("TELL_FILE_ALT1", os.path.join(HERE, "telat_alt1.npy"))  # 2500 m
+# Divide out the smooth Rayleigh/ozone extinction so solar * TAPAS stays continuum-normalized
+# (TELL_STRIP_SMOOTH=0 keeps the full TAPAS transmission).
+TELL_STRIP_SMOOTH = os.environ.get("TELL_STRIP_SMOOTH", "1").strip() != "0"
 
 # Telluric-free atlas (Hamburg disk-center atlas with Kitt Peak tellurics removed,
 # fitted with the 2500 m TAPAS model). Shape (3, N): raw ISPy wavelength [A, air],
@@ -410,7 +413,33 @@ def _load_telat(path: str) -> Tuple[np.ndarray, np.ndarray]:
     if not np.all(np.diff(w) > 0):
         idx = np.argsort(w)
         w, t = w[idx], t[idx]
+    if TELL_STRIP_SMOOTH:
+        t = _strip_smooth_extinction(w, t)
     return w, t
+
+
+def _strip_smooth_extinction(w: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """Remove the smooth Rayleigh/ozone/continuum extinction from a TAPAS transmission.
+
+    The smooth part of tau = -ln(T) is estimated as the minimum per 1 A bin, then the
+    1st percentile over 400 A, smoothed with a 100 A Gaussian. The window is wider than
+    any O2 or H2O band, so band pseudo-continua (overlapping line wings) are kept and only
+    the extinction that the continuum-normalized atlas does not contain is divided out.
+    """
+    tau = -np.log(np.clip(t, 1e-9, 1.0))
+    edges = np.arange(w[0], w[-1] + 1.0, 1.0)
+    starts = np.searchsorted(w, edges[:-1])
+    keep = np.r_[np.diff(starts) > 0, True] & (starts < w.size)
+    starts = starts[keep]
+    centers = edges[:-1][keep] + 0.5
+    bmin = np.minimum.reduceat(tau, starts)
+    half = 200
+    padded = np.pad(bmin, half, mode="edge")
+    win = np.lib.stride_tricks.sliding_window_view(padded, 2 * half + 1)
+    base = np.percentile(win, 1, axis=1)
+    base = convolve_reflect(base, gaussian_kernel_1d(100.0))
+    tau_lines = np.clip(tau - np.interp(w, centers, base), 0.0, None)
+    return np.exp(-tau_lines)
 
 
 # alt in meters
