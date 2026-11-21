@@ -74,6 +74,12 @@ GLOBAL_WMIN_A = 3290.0
 GLOBAL_WMAX_A = 12500.0
 
 DEFAULT_WIDTH_A = 25.0
+
+# 1D panel layout: y-axis top in units of the continuum, and how far above the solar
+# continuum the telluric transmission curve is drawn (display only; the tellurics are
+# still multiplied into the spectrum at their true level).
+PLOT_HEADROOM = 1.50
+TELL_PLOT_OFFSET = 0.15
 OVERLAP = 0.10
 DEFAULT_STEP_A = DEFAULT_WIDTH_A * (1.0 - OVERLAP)
 
@@ -985,6 +991,27 @@ def _style_axes(ax, theme_dict: Dict[str, str]):
     ax.grid(False)
 
 
+def _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on):
+    """Draw the telluric transmission on a twin y-axis, shifted up by TELL_PLOT_OFFSET
+    (in continuum units) so its baseline does not sit on the solar continuum.
+    The right-hand tick labels remain true transmission values."""
+    axT = ax1.twinx()
+    axT.set_zorder(ax1.get_zorder() - 1)
+    ax1.patch.set_visible(False)
+    axT.patch.set_visible(False)
+    axT.set_facecolor("none")
+    for sp in axT.spines.values():
+        sp.set_color(theme_dict["border"])
+    axT.tick_params(colors=theme_dict["text"], which="both")
+    axT.yaxis.label.set_color(theme_dict["text"])
+    axT.set_ylim(-TELL_PLOT_OFFSET, PLOT_HEADROOM - TELL_PLOT_OFFSET)
+    axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
+             label="Tellurics" if legend_on else None)
+    axT.set_ylabel("Telluric transmission")
+    axT.grid(False)
+    return axT
+
+
 def _style_legend(leg, theme_dict: Dict[str, str]):
     if leg is None:
         return
@@ -1153,25 +1180,11 @@ def render_segment_png(
                 y_cont = float(np.nanmax(y_final)) if np.isfinite(np.nanmax(y_final)) else 1.0
             if y_cont <= 0:
                 y_cont = 1.0
-            headroom = 1.20
-            ax1.set_ylim(0, headroom * y_cont)
+            ax1.set_ylim(0, PLOT_HEADROOM * y_cont)
 
             axT = None
             if tellurics_on:
-                axT = ax1.twinx()
-                axT.set_zorder(ax1.get_zorder() - 1)
-                ax1.patch.set_visible(False)
-                axT.patch.set_visible(False)
-                axT.set_facecolor("none")
-                for s in axT.spines.values():
-                    s.set_color(theme_dict["border"])
-                axT.tick_params(colors=theme_dict["text"], which="both")
-                axT.yaxis.label.set_color(theme_dict["text"])
-                axT.set_ylim(0, headroom)
-                axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
-                         label="Tellurics" if legend_on else None)
-                axT.set_ylabel("Telluric transmission")
-                axT.grid(False)
+                axT = _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on)
 
             ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam" else "Intensity (cgs per Hz)")
 
@@ -1185,11 +1198,7 @@ def render_segment_png(
                 _style_legend(leg, theme_dict)
 
         else:
-            # Normalized: plot tellurics in same axis for simplicity
-            if tellurics_on:
-                ax1.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
-                         label="Tellurics" if legend_on else None)
-
+            # Normalized
             if refinf_on and (np.isfinite(R500) and R500 < 1e8):
                 ax1.plot(w_plot, y_ref, color=ref_col, lw=1.0, alpha=0.45, zorder=1,
                          label="REF ∞" if legend_on else None)
@@ -1197,11 +1206,20 @@ def render_segment_png(
             ax1.plot(w_plot, y_final, color=spec_col, lw=2.0, zorder=2,
                      label="Spectrum" if legend_on else None)
 
-            ax1.set_ylim(0, 1.20)
+            ax1.set_ylim(0, PLOT_HEADROOM)
             ax1.set_ylabel("Normalized intensity")
 
+            axT = None
+            if tellurics_on:
+                axT = _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on)
+
             if legend_on:
-                leg = ax1.legend(loc="upper right", frameon=True, fontsize=10)
+                handles, labs = ax1.get_legend_handles_labels()
+                if tellurics_on and axT is not None:
+                    h2, l2 = axT.get_legend_handles_labels()
+                    handles += h2
+                    labs += l2
+                leg = ax1.legend(handles, labs, loc="upper right", frameon=True, fontsize=10)
                 _style_legend(leg, theme_dict)
 
         r_txt = "∞" if (np.isfinite(R500) and R500 >= 1e8) else f"{R500:g}"
@@ -1231,9 +1249,9 @@ def render_segment_png(
                 )
                 for x_med, lab in zip(pw_moore, pi_moore):
                     x_plot = (x_med / 10.0) if plot_in_nm else x_med
-                    ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
+                    ax1.axvline(x_plot, ymin=0.0, ymax=0.80, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
                     ax1.text(
-                        x_plot, 0.84, lab,
+                        x_plot, 0.82, lab,
                         transform=ax1.get_xaxis_transform(),
                         rotation=45, fontsize=8,
                         ha="center", va="bottom",
@@ -1257,9 +1275,9 @@ def render_segment_png(
                 )
                 for x_med, lab in zip(pw_ia, pi_ia):
                     x_plot = (x_med / 10.0) if plot_in_nm else x_med
-                    ax1.axvline(x_plot, ymin=0.0, ymax=0.82, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
+                    ax1.axvline(x_plot, ymin=0.0, ymax=0.80, lw=0.4, alpha=0.5, zorder=0, color=spec_col)
                     ax1.text(
-                        x_plot, 0.84, lab,
+                        x_plot, 0.82, lab,
                         transform=ax1.get_xaxis_transform(),
                         rotation=45, fontsize=8,
                         ha="center", va="bottom",
