@@ -965,10 +965,13 @@ def _style_axes(ax, theme_dict: Dict[str, str]):
     ax.grid(False)
 
 
-def _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on):
+def _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on, draw=True):
     """Draw the telluric transmission on a twin y-axis, shifted up by TELL_PLOT_OFFSET
     (in continuum units) so its baseline does not sit on the solar continuum.
-    The right-hand tick labels remain true transmission values."""
+    The right-hand tick labels remain true transmission values.
+
+    The axis is created even when draw=False (tellurics off) so the plot box keeps the
+    same width and the spectrum does not jump horizontally when tellurics are toggled."""
     axT = ax1.twinx()
     axT.set_zorder(ax1.get_zorder() - 1)
     ax1.patch.set_visible(False)
@@ -979,8 +982,9 @@ def _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on):
     axT.tick_params(colors=theme_dict["text"], which="both")
     axT.yaxis.label.set_color(theme_dict["text"])
     axT.set_ylim(-TELL_PLOT_OFFSET, PLOT_HEADROOM - TELL_PLOT_OFFSET)
-    axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
-             label="Tellurics" if legend_on else None)
+    if draw:
+        axT.plot(w_plot, t_disp, color=tell_col, lw=1.2, zorder=3,
+                 label="Tellurics" if legend_on else None)
     axT.set_ylabel("Telluric transmission")
     axT.grid(False)
     return axT
@@ -1156,9 +1160,8 @@ def render_segment_png(
                 y_cont = 1.0
             ax1.set_ylim(0, PLOT_HEADROOM * y_cont)
 
-            axT = None
-            if tellurics_on:
-                axT = _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on)
+            # always reserve the right-hand axis so the plot width does not change with the toggle
+            axT = _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on, draw=tellurics_on)
 
             ax1.set_ylabel("Intensity (cgs per Å)" if flux == "flam" else "Intensity (cgs per Hz)")
 
@@ -1183,9 +1186,8 @@ def render_segment_png(
             ax1.set_ylim(0, PLOT_HEADROOM)
             ax1.set_ylabel("Normalized intensity")
 
-            axT = None
-            if tellurics_on:
-                axT = _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on)
+            # always reserve the right-hand axis so the plot width does not change with the toggle
+            axT = _add_telluric_axis(ax1, w_plot, t_disp, theme_dict, tell_col, legend_on, draw=tellurics_on)
 
             if legend_on:
                 handles, labs = ax1.get_legend_handles_labels()
