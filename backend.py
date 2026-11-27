@@ -44,19 +44,15 @@ import io
 from PIL import Image
 import os
 import gc
-import sys
+
 import traceback
 from typing import Optional, Tuple, Dict
 from matplotlib.ticker import AutoMinorLocator
 
 
 import numpy as np
-import astropy.units as u
-
-try:
-    from specutils.utils.wcs_utils import air_to_vac
-except Exception as _e:
-    air_to_vac = None
+import csv
+import re
 
 import matplotlib
 matplotlib.use("Agg")
@@ -125,12 +121,10 @@ THEME_DARK = {
 # Resolve paths relative to this file
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Ensure bundled ISPy submodule is importable (repo has ISPy/ISPy/...)
-ISPY_BUNDLE = os.path.join(HERE, "ISPy")
-if os.path.isdir(ISPY_BUNDLE) and ISPY_BUNDLE not in sys.path:
-    sys.path.insert(0, ISPY_BUNDLE)
-
-from ISPy.spec import atlas as ispy_atlas  # noqa: E402
+# FTS disk-center atlas, converted once from the ISPy IDL save file by
+# tools/convert_atlas.py (wave [A, air], I_nu and continuum in SI). The unit
+# conversions below reproduce ISPy.spec.atlas (>= 0790aa5) without importing it.
+ATLAS_FILE = os.environ.get("ATLAS_FILE", os.path.join(HERE, "fts_atlas.npz"))
 
 # Telluric files (TAPAS precomputed)
 TELL_FILE_ALT0 = os.environ.get("TELL_FILE_ALT0", os.path.join(HERE, "telat_alt0.npy"))  # 0 m
@@ -156,16 +150,37 @@ NEW_LINE_CSV = os.path.join(HERE, "babcock_clean_02012026.csv")
 
 
 # ----------------------------
-# ISPy atlas (lazy)
+# FTS atlas (loaded once)
 # ----------------------------
-def get_fts():
-    """Return a FRESH ISPy atlas instance.
+C_A_PER_S = 2.99792458e18      # speed of light [Angstrom/s]
+SI_TO_CGS_INU = 1.0e7 / 1.0e4  # (J -> erg) / (m^2 -> cm^2)
 
-    ISPy's atlas.to() mutates internal arrays in-place. Reusing a single instance
-    across requests will corrupt units when switching perHz. Therefore, we create
-    a new instance for every fetch.
+_ATLAS = None
+
+
+def get_atlas():
+    """(wave [A], I_nu [SI], continuum I_nu [SI]) as float64 arrays, loaded once."""
+    global _ATLAS
+    if _ATLAS is None:
+        z = np.load(ATLAS_FILE)
+        _ATLAS = (np.asarray(z["wave"], dtype=float),
+                  np.asarray(z["inu_si"], dtype=float),
+                  np.asarray(z["cont_si"], dtype=float))
+    return _ATLAS
+
+
+def atlas_slice(w0: float, w1: float, perHz: bool):
+    """Atlas slice [w0, w1] (air A) in cgs: per Hz (I_nu) or per Angstrom (I_lambda).
+
+    Same arithmetic as ISPy.spec.atlas.to('cgs', perHz=...) followed by get(..., nograv=True):
+    I_nu[cgs] = I_nu[SI] * 1e7 / 1e4 ;  I_lambda[cgs per A] = I_nu[cgs] * c[A/s] / lambda^2.
     """
-    return ispy_atlas.atlas()
+    wave, inu, cont = get_atlas()
+    i0, i1 = np.searchsorted(wave, [w0, w1])
+    i1 = min(i1 + 1, wave.size)
+    w = wave[i0:i1]
+    f = SI_TO_CGS_INU if perHz else SI_TO_CGS_INU * C_A_PER_S / (w * w)
+    return w, inu[i0:i1] * f, cont[i0:i1] * f
 
 
 _TELFREE = None
@@ -195,12 +210,8 @@ def _swap_telfree(wav: np.ndarray, I: np.ndarray, cont: np.ndarray) -> np.ndarra
 
 
 def get_atlas_range() -> Tuple[float, float]:
-    fts = get_fts()
-    w = np.asarray(getattr(fts, "wave"), dtype=float)
-    w = w[np.isfinite(w)]
-    if w.size == 0:
-        raise RuntimeError("Could not determine ISPy atlas wavelength range (fts.wave missing/empty).")
-    return float(np.nanmin(w)), float(np.nanmax(w))
+    w = get_atlas()[0]
+    return float(w[0]), float(w[-1])
 
 
 def fetch_ispy_air_norm(w0: float, w1: float):
@@ -208,15 +219,7 @@ def fetch_ispy_air_norm(w0: float, w1: float):
     Robust to empty atlas coverage: returns empty arrays instead of raising.
     """
     pad = 0.5
-    fts = get_fts()
-    try:
-        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=False)
-    except Exception:
-        return np.array([], dtype=float), np.array([], dtype=float)
-
-    wav = np.asarray(wav, dtype=float)
-    I = np.asarray(I, dtype=float)
-    cont = np.asarray(cont, dtype=float)
+    wav, I, cont = atlas_slice(w0 - pad, w1 + pad, perHz=False)
 
     if wav.size == 0 or I.size == 0 or cont.size == 0:
         return np.array([], dtype=float), np.array([], dtype=float)
@@ -239,14 +242,7 @@ def fetch_ispy_air_norm(w0: float, w1: float):
 def fetch_ispy_air_cgs_fnu(w0: float, w1: float):
     """Return wavelength [Å] and absolute intensity in cgs per Hz (I_nu) for [w0, w1]."""
     pad = 0.5
-    fts = get_fts()
-    try:
-        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=True)
-    except Exception:
-        return np.array([], dtype=float), np.array([], dtype=float)
-
-    wav = np.asarray(wav, dtype=float)
-    I = np.asarray(I, dtype=float)
+    wav, I, cont = atlas_slice(w0 - pad, w1 + pad, perHz=True)
 
     if wav.size == 0 or I.size == 0:
         return np.array([], dtype=float), np.array([], dtype=float)
@@ -259,14 +255,7 @@ def fetch_ispy_air_cgs_fnu(w0: float, w1: float):
 def fetch_ispy_air_cgs_flam(w0: float, w1: float):
     """Return wavelength [Å] and absolute intensity in cgs per Å (I_lambda) for [w0, w1]."""
     pad = 0.5
-    fts = get_fts()
-    try:
-        wav, I, cont = fts.get(w0 - pad, w1 + pad, cgs=True, nograv=True, perHz=False)
-    except Exception:
-        return np.array([], dtype=float), np.array([], dtype=float)
-
-    wav = np.asarray(wav, dtype=float)
-    I = np.asarray(I, dtype=float)
+    wav, I, cont = atlas_slice(w0 - pad, w1 + pad, perHz=False)
 
     if wav.size == 0 or I.size == 0:
         return np.array([], dtype=float), np.array([], dtype=float)
@@ -346,17 +335,16 @@ def contrast_percentiles(c2d: int):
     return plo, phi
 
 def air_to_vac_A(w_air_A: np.ndarray) -> np.ndarray:
-    """Convert air wavelengths [Å] -> vacuum wavelengths [Å] using specutils.air_to_vac.
+    """Convert air wavelengths [Å] -> vacuum wavelengths [Å].
 
-    Returns a NumPy float array in Å.
+    Refractive index of standard air from Greisen et al. (2006, A&A 446, 747), eq. 65,
+    evaluated at the air wavelength ("inversion" scheme; error < 1e-9). This is exactly
+    what specutils.utils.wcs_utils.air_to_vac did with its defaults up to v1.20.
     """
-    if air_to_vac is None:
-        raise RuntimeError(
-            "specutils is required for air/vacuum conversion, but specutils.utils.wcs_utils.air_to_vac "
-            "could not be imported."
-        )
     w_air_A = np.asarray(w_air_A, dtype=float)
-    return air_to_vac(w_air_A * u.AA).to_value(u.AA)
+    sigma2 = (1.0e4 / w_air_A) ** 2          # (1 / lambda[um])^2
+    n = 1.0 + 1.0e-6 * (287.6155 + 1.62887 * sigma2 + 0.01360 * sigma2 ** 2)
+    return w_air_A * n
 
 
 def vac_to_air_A(w_vac_A: np.ndarray, n_iter: int = 6) -> np.ndarray:
@@ -458,49 +446,64 @@ new_wav = new_strength = new_ids = new_forced = None
 
 
 
+def _first_number(val, signed: bool) -> float:
+    """First numeric token in a cell (handles '14N', '6302.5*', empty), else NaN."""
+    if val is None:
+        return np.nan
+    if isinstance(val, (int, float)):
+        return float(val) if np.isfinite(val) else np.nan
+    m = re.search(r"[-+]?\d+(?:\.\d+)?" if signed else r"\d+(?:\.\d+)?", str(val))
+    return float(m.group(0)) if m else np.nan
+
+
 def clean_wavelength(val):
     """Extract first numeric token from wavelength string."""
-    import re
-    import pandas as pd
-    if isinstance(val, (int, float)) and not pd.isna(val):
-        return float(val)
-    if not isinstance(val, str):
-        return np.nan
-    m = re.search(r"\d+(?:\.\d+)?", val)
-    return float(m.group(0)) if m else np.nan
+    return _first_number(val, signed=False)
 
 
 def clean_ew(val):
-    """Extract numeric part of EW (e.g. '14N' → 14)."""
-    import re
-    import pandas as pd
-    if isinstance(val, (int, float)) and not pd.isna(val):
-        return float(val)
-    if not isinstance(val, str):
-        return np.nan
-    m = re.search(r"[-+]?\d+(?:\.\d+)?", val)
-    return float(m.group(0)) if m else np.nan
+    """Extract numeric part of EW (e.g. '14N' -> 14)."""
+    return _first_number(val, signed=True)
 
 
 def clean_strength(val):
     """Extract numeric strength from messy strings."""
-    import re
-    import pandas as pd
-    if isinstance(val, (int, float)) and not pd.isna(val):
-        return float(val)
-    if not isinstance(val, str):
-        return np.nan
-    m = re.search(r"[-+]?\d+(?:\.\d+)?", val)
-    return float(m.group(0)) if m else np.nan
+    return _first_number(val, signed=True)
 
 
 def _read_csv_auto(path: str):
-    """Try comma, then semicolon."""
-    import pandas as pd
-    df = pd.read_csv(path)
-    if len(df.columns) == 1 and ";" in str(df.columns[0]):
-        df = pd.read_csv(path, sep=";")
-    return df
+    """Read a CSV (comma, else semicolon) into {column: [str, ...]}; missing cells are ''."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        text = f.read()
+    delim = ","
+    first = text.splitlines()[0] if text else ""
+    if ";" in first and "," not in first:
+        delim = ";"
+    rows = list(csv.reader(text.splitlines(), delimiter=delim))
+    if not rows:
+        return {}
+    header = [h.strip() for h in rows[0]]
+    cols = {h: [] for h in header}
+    for r in rows[1:]:
+        if not any(c.strip() for c in r):
+            continue
+        for j, h in enumerate(header):
+            cols[h].append(r[j].strip() if j < len(r) else "")
+    return cols
+
+
+def _id_is_forced(sv: str) -> bool:
+    sv = (sv or "").strip()
+    return sv.endswith("*") or sv.startswith("*") or (" *" in sv) or ("* " in sv)
+
+
+def _id_is_excluded(sv: str) -> bool:
+    sv = (sv or "").strip()
+    return sv.endswith("-") or sv.startswith("-") or (" -" in sv) or ("- " in sv) or (" - " in sv)
+
+
+def _strip_markers(sv: str) -> str:
+    return (sv or "").replace("*", "").replace("-", "").strip()
 
 
 def bin_lines(wav: np.ndarray, ids: np.ndarray, bin_A: float = 0.2):
@@ -647,15 +650,10 @@ def select_labels_windowed_binned(
 
 
 def load_moore_lines(path: str):
-    """Moore list CSV expected columns: (wavelength or wav), ew, id.
+    """Moore list CSV expected columns: (wavelength or wav), ew, id, optional flag column.
 
-    Markers:
-      - '*' => forced (always shown if within window)
-      - '-' => excluded (never shown)
-
-    Markers can appear either:
-      - in an extra flag column (recommended), or
-      - embedded in the id string (e.g. "Hα*" or "Hα -").
+    Markers: '*' => forced (always shown if within window), '-' => excluded (never shown).
+    They may sit in the flag column or inside the id string. Exclusion wins over forcing.
 
     Returns: wav, id, forced
     """
@@ -663,84 +661,35 @@ def load_moore_lines(path: str):
         print(f"[LINES] Moore missing: {path}", flush=True)
         return None, None, None
 
-    df = _read_csv_auto(path)
+    cols = _read_csv_auto(path)
+    if "wavelength" not in cols and "wav" in cols:
+        cols["wavelength"] = cols.pop("wav")
+    if "id" not in cols or "wavelength" not in cols:
+        raise ValueError(f"Moore CSV columns missing. Found: {list(cols)}")
 
-    # accept either naming convention
-    if "wavelength" not in df.columns and "wav" in df.columns:
-        df = df.rename(columns={"wav": "wavelength"})
-
-    if "id" not in df.columns:
-        raise ValueError(f"Moore CSV columns missing. Found: {list(df.columns)}")
-
-    # Optional flag column: first column not in the expected set
     expected = {"wavelength", "wav", "ew", "id"}
-    extra_cols = [c for c in df.columns if c not in expected]
-    flag_col = extra_cols[-1] if len(extra_cols) > 0 else None
+    extra_cols = [c for c in cols if c not in expected]
+    flag_col = extra_cols[-1] if extra_cols else None
 
-    df["wavelength"] = df["wavelength"].apply(clean_wavelength)
-    if "ew" in df.columns:
-        df["ew"] = df["ew"].apply(clean_ew)
-    df["id"] = df["id"].fillna("").astype(str)
+    wav = np.array([clean_wavelength(v) for v in cols["wavelength"]], dtype=float)
+    ids = list(cols["id"])
+    flags = cols[flag_col] if flag_col is not None else [""] * len(ids)
 
-    # --- marker parsing helpers (conservative) ---
-    def _id_is_forced(s: str) -> bool:
-        s = (s or "").strip()
-        return s.endswith("*") or s.startswith("*") or (" *" in s) or ("* " in s)
+    forced = np.array([_id_is_forced(i) or ("*" in f) for i, f in zip(ids, flags)], dtype=bool)
+    excluded = np.array([_id_is_excluded(i) or ("-" in f) for i, f in zip(ids, flags)], dtype=bool)
+    ids = np.array([_strip_markers(i) for i in ids], dtype=str)
 
-    def _id_is_excluded(s: str) -> bool:
-        s = (s or "").strip()
-        return s.endswith("-") or s.startswith("-") or (" -" in s) or ("- " in s) or (" - " in s)
-
-    forced_id = df["id"].map(_id_is_forced)
-
-    if flag_col is not None:
-        flag_s = df[flag_col].fillna("").astype(str).str.strip()
-        forced_flag = flag_s.str.contains("*", regex=False)
-        exclude_flag = flag_s.str.contains("-", regex=False)
-    else:
-        forced_flag = False
-        exclude_flag = False
-
-    exclude_id = df["id"].map(_id_is_excluded)
-
-    forced = (forced_id | forced_flag).to_numpy(bool)
-    excluded = (exclude_id | exclude_flag).to_numpy(bool)
-
-    # Drop excluded lines entirely (exclusion wins over forcing)
-    if np.any(excluded):
-        df = df.loc[~excluded].copy()
-        forced = forced[~excluded]
-
-    # Strip markers from label text
-    df["id"] = (
-        df["id"]
-        .str.replace("*", "", regex=False)
-        .str.replace("-", "", regex=False)
-        .str.strip()
-    )
-
-    df = df.dropna(subset=["wavelength"])
-    df = df[df["id"].str.strip() != ""]
-
-    if len(df) == 0:
+    keep = (~excluded) & np.isfinite(wav) & (ids != "")
+    if not np.any(keep):
         return np.array([], dtype=float), np.array([], dtype=str), np.array([], dtype=bool)
-
-    return df["wavelength"].to_numpy(float), df["id"].to_numpy(str), np.asarray(forced, dtype=bool)
-
+    return wav[keep], ids[keep], forced[keep]
 
 
 def load_ia_lines(path: str):
     """IA/strength CSV expected columns: wav, strength, id, and optional flag column.
 
-    Markers:
-      - '*' => forced (always shown if within window)
-      - '-' => excluded (never shown)
-
-    Markers can appear either:
-      - in an extra flag column (recommended), or
-      - embedded in the id string (e.g. "Ca II 8542*" or "Ca II 8542 -").
-
-    Exclusion wins over forcing.
+    Markers: '*' => forced, '-' => excluded (exclusion wins). Lines with strength < -5
+    and telluric ids (containing 'atm') are dropped.
 
     Returns: wav, strength, id, forced
     """
@@ -748,79 +697,27 @@ def load_ia_lines(path: str):
         print(f"[LINES] IA missing: {path}", flush=True)
         return None, None, None, None
 
-    df = _read_csv_auto(path)
-    if not all(c in df.columns for c in ("wav", "strength", "id")):
-        raise ValueError(f"IA CSV columns missing. Found: {list(df.columns)}")
+    cols = _read_csv_auto(path)
+    if not all(c in cols for c in ("wav", "strength", "id")):
+        raise ValueError(f"IA CSV columns missing. Found: {list(cols)}")
 
-    # Optional flag column: any extra column beyond required set
-    extra_cols = [c for c in df.columns if c not in ("wav", "strength", "id")]
-    flag_col = extra_cols[-1] if len(extra_cols) > 0 else None
+    extra_cols = [c for c in cols if c not in ("wav", "strength", "id")]
+    flag_col = extra_cols[-1] if extra_cols else None
 
-    # Clean core columns
-    df["wav"]      = df["wav"].apply(clean_wavelength)
-    df["strength"] = df["strength"].apply(clean_strength)
-    df["id"]       = df["id"].fillna("").astype(str)
+    wav = np.array([clean_wavelength(v) for v in cols["wav"]], dtype=float)
+    strength = np.array([clean_strength(v) for v in cols["strength"]], dtype=float)
+    ids = list(cols["id"])
+    flags = cols[flag_col] if flag_col is not None else [""] * len(ids)
 
-    # Conservative marker parsing: only treat '*' or '-' as markers when separated or at ends
-    def _id_is_forced(s: str) -> bool:
-        s = (s or "").strip()
-        return s.endswith("*") or s.startswith("*") or (" *" in s) or ("* " in s)
+    forced = np.array([_id_is_forced(i) or ("*" in f) for i, f in zip(ids, flags)], dtype=bool)
+    excluded = np.array([_id_is_excluded(i) or ("-" in f) for i, f in zip(ids, flags)], dtype=bool)
+    ids = np.array([_strip_markers(i) for i in ids], dtype=str)
 
-    def _id_is_excluded(s: str) -> bool:
-        s = (s or "").strip()
-        return s.endswith("-") or s.startswith("-") or (" -" in s) or ("- " in s) or (" - " in s)
-
-    forced_id  = df["id"].map(_id_is_forced)
-    exclude_id = df["id"].map(_id_is_excluded)
-
-    if flag_col is not None:
-        flag_s = df[flag_col].fillna("").astype(str).str.strip()
-        forced_flag  = flag_s.str.contains("*", regex=False)
-        exclude_flag = flag_s.str.contains("-", regex=False)
-    else:
-        forced_flag  = False
-        exclude_flag = False
-
-    forced = (forced_id | forced_flag).to_numpy(bool)
-    excluded = (exclude_id | exclude_flag).to_numpy(bool)
-
-    # Strip markers from label text
-    df["id"] = (
-        df["id"]
-        .str.replace("*", "", regex=False)
-        .str.replace("-", "", regex=False)
-        .str.strip()
-    )
-
-    # Build a single boolean mask and apply it to BOTH df and forced to keep alignment
-    m = np.ones(len(df), dtype=bool)
-
-    # Exclusion (wins)
-    if np.any(excluded):
-        m &= ~excluded
-
-    # Required finite data
-    m &= np.isfinite(df["wav"].to_numpy(float))
-    m &= np.isfinite(df["strength"].to_numpy(float))
-
-    # Strength threshold
-    m &= (df["strength"].to_numpy(float) >= -5)
-
-    # Remove telluric IDs
-    m &= ~df["id"].str.contains("atm", case=False, na=False).to_numpy(bool)
-
-    df = df.loc[m].copy()
-    forced = forced[m]
-
-    if len(df) == 0:
+    keep = (~excluded) & np.isfinite(wav) & np.isfinite(strength) & (strength >= -5)
+    keep &= np.array(["atm" not in i.lower() for i in ids], dtype=bool)
+    if not np.any(keep):
         return np.array([], dtype=float), np.array([], dtype=float), np.array([], dtype=str), np.array([], dtype=bool)
-
-    return (
-        df["wav"].to_numpy(float),
-        df["strength"].to_numpy(float),
-        df["id"].to_numpy(str),
-        np.asarray(forced, dtype=bool),
-    )
+    return wav[keep], strength[keep], ids[keep], forced[keep]
 
 
 try:
