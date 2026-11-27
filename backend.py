@@ -1063,13 +1063,16 @@ def render_segment_png(
             nrows=2,
             figsize=(12, 4.8),
             gridspec_kw={"height_ratios": [2, 1]},
-            dpi=DPI, constrained_layout=True,
+            dpi=DPI,
         )
+        fig.subplots_adjust(left=0.055, right=0.945, top=0.92, bottom=0.11, hspace=0.32)
     elif show1d and (not show2d):
-        fig, ax1 = plt.subplots(nrows=1, figsize=(12, 3.2), dpi=DPI, constrained_layout=True)
+        fig, ax1 = plt.subplots(nrows=1, figsize=(12, 3.2), dpi=DPI)
+        fig.subplots_adjust(left=0.055, right=0.945, top=0.88, bottom=0.17)
         ax2 = None
     else:
-        fig, ax2 = plt.subplots(nrows=1, figsize=(12, 2.2), dpi=DPI, constrained_layout=True)
+        fig, ax2 = plt.subplots(nrows=1, figsize=(12, 2.2), dpi=DPI)
+        fig.subplots_adjust(left=0.055, right=0.945, top=0.95, bottom=0.25)
         ax1 = None
 
     
@@ -1337,31 +1340,18 @@ def render_segment_png(
                     half = 0.05 * rng
                 vmin, vmax = mid - half, mid + half
 
-# tile into a strip
-        img2d = np.tile(y_strip[np.newaxis, :], (REPEAT_2D, 1))
-
-        # Build wavelength bin EDGES from sample CENTERS (non-uniform-safe)
+# strip image: resample onto a uniform grid (sampling is near-uniform within a
+        # window, residual error is far below a pixel) and draw as a single image
         x = np.asarray(w_plot, dtype=float)
         if x.size >= 2:
-            x_edges = np.empty(x.size + 1, dtype=float)
-            x_edges[1:-1] = 0.5 * (x[:-1] + x[1:])
-            x_edges[0] = x[0] - 0.5 * (x[1] - x[0])
-            x_edges[-1] = x[-1] + 0.5 * (x[-1] - x[-2])
+            xu = np.linspace(x[0], x[-1], x.size)
+            row = np.interp(xu, x, y_strip)
+            extent = [x[0] - 0.5 * (x[1] - x[0]), x[-1] + 0.5 * (x[-1] - x[-2]), 0.0, 1.0]
         else:
-            # degenerate fallback
-            x_edges = np.array([x[0] - 0.5, x[0] + 0.5], dtype=float)
-
-        y_edges = np.linspace(0.0, 1.0, REPEAT_2D + 1)
-
-        ax2.pcolormesh(
-            x_edges,
-            y_edges,
-            img2d,
-            shading="flat",
-            cmap="gray",
-            vmin=vmin,
-            vmax=vmax,
-        )
+            row = y_strip
+            extent = [x[0] - 0.5, x[0] + 0.5, 0.0, 1.0]
+        ax2.imshow(row[np.newaxis, :], aspect="auto", extent=extent, origin="lower",
+                   cmap="gray", vmin=vmin, vmax=vmax, interpolation="nearest")
 
         ax2.set_xlim(start_plot, end_plot)
         ax2.set_xlabel(f"Wavelength [{unit_label}]")
@@ -1370,12 +1360,10 @@ def render_segment_png(
 
 
     if ax1 is not None:
-        ax1.minorticks_on()
-        ax1.xaxis.set_minor_locator(AutoMinorLocator(10))
+        ax1.xaxis.set_minor_locator(AutoMinorLocator(5))
 
     if ax2 is not None:
-        ax2.minorticks_on()
-        ax2.xaxis.set_minor_locator(AutoMinorLocator(10))
+        ax2.xaxis.set_minor_locator(AutoMinorLocator(5))
 
 
     # --- subtle bottom watermark (no bar, split left/right) ---
@@ -1422,7 +1410,7 @@ def render_segment_png(
 
 
     
-    # --- store axis pixel metadata for hover mapping (always) ---
+    # --- draw ONCE: axis metadata, PNG pixels and barcode all come from this draw ---
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     png_w = float(fig.bbox.width)
@@ -1430,7 +1418,6 @@ def render_segment_png(
     if ax1 is not None:
         bb = ax1.get_window_extent(renderer=renderer)
         xlim0, xlim1 = ax1.get_xlim()
-
         meta = {
             "xlim0": float(xlim0),
             "xlim1": float(xlim1),
@@ -1438,76 +1425,40 @@ def render_segment_png(
             "ax1_x0": float(bb.x0),
             "ax1_x1": float(bb.x1),
         }
-
         key = f"{start:.6f}|{end:.6f}|{R500:.6f}|{alt_m}|{medium}|{unit}|{flux}|{theme}|{int(show1d)}|{int(show2d)}"
         RENDER_META[key] = meta
 
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", transparent=transparent)
-    # ---- Append hidden wavelength barcode strip to PNG (does NOT affect plotting) ----
-    # This encodes the plotted x-axis coordinate (in the current axis units) into RGB
-    # values of a narrow strip appended at the bottom of the PNG. The frontend decodes
-    # this to get a drift-free hover wavelength mapping.
-    try:
-        if ax1 is not None:
-            fig.canvas.draw()
-            renderer = fig.canvas.get_renderer()
-            bb = ax1.get_window_extent(renderer=renderer)
+    if transparent:
+        # transparent background needs savefig's compositing; rare path, second draw accepted
+        tmp = io.BytesIO()
+        fig.savefig(tmp, format="png", transparent=True)
+        rgba = np.array(Image.open(io.BytesIO(tmp.getvalue())).convert("RGBA"), dtype=np.uint8)
+    else:
+        rgba = np.asarray(fig.canvas.buffer_rgba(), dtype=np.uint8).copy()
 
-            # Canvas pixel size (Matplotlib) vs saved PNG pixel grid
-            canvas_w, canvas_h = fig.canvas.get_width_height()
-
-            buf.seek(0)
-            im = Image.open(buf).convert("RGBA")
-            png_w, png_h = im.size
-
-            sx = (png_w / canvas_w) if canvas_w > 0 else 1.0
-
-            x0 = int(max(0, min(png_w - 1, round(bb.x0 * sx))))
-            x1 = int(max(0, min(png_w,     round(bb.x1 * sx))))
-            y_ref = 0.5 * (bb.y0 + bb.y1)  # canvas pixel y
-
-            inv = ax1.transData.inverted()
-
-            bar = np.zeros((HOVER_BAR_H, png_w, 4), dtype=np.uint8)
+    # ---- Append hidden wavelength barcode strip (x-axis value * HOVER_BAR_SCALE as 24-bit) ----
+    if ax1 is not None:
+        try:
+            h, w_px, _ = rgba.shape
+            xlim0, xlim1 = ax1.get_xlim()
+            x0 = int(max(0, min(w_px - 1, round(bb.x0))))
+            x1 = int(max(0, min(w_px, round(bb.x1))))
+            bar = np.zeros((HOVER_BAR_H, w_px, 4), dtype=np.uint8)
             bar[:, :, 3] = 255
+            xpix = np.arange(x0, x1, dtype=float) + 0.5
+            dx = xlim0 + (xpix - bb.x0) / max(bb.x1 - bb.x0, 1e-9) * (xlim1 - xlim0)
+            v = np.clip(np.round(dx * HOVER_BAR_SCALE), 0, 0xFFFFFF).astype(np.int64)
+            bar[:, x0:x1, 0] = (v >> 16) & 0xFF
+            bar[:, x0:x1, 1] = (v >> 8) & 0xFF
+            bar[:, x0:x1, 2] = v & 0xFF
+            rgba = np.vstack([rgba, bar])
+        except Exception:
+            pass
 
-            for xpng in range(x0, x1):
-                # Convert png x -> canvas x
-                xcan = (xpng + 0.5) / sx if sx != 0 else (xpng + 0.5)
-                dx, _ = inv.transform((xcan, y_ref))
-                if not np.isfinite(dx):
-                    continue
-
-                v = int(round(float(dx) * HOVER_BAR_SCALE))
-                if v < 0:
-                    v = 0
-                if v > 0xFFFFFF:
-                    v = 0xFFFFFF
-
-                bar[:, xpng, 0] = (v >> 16) & 0xFF
-                bar[:, xpng, 1] = (v >> 8) & 0xFF
-                bar[:, xpng, 2] = v & 0xFF
-
-            rgba = np.array(im, dtype=np.uint8)
-            rgba2 = np.vstack([rgba, bar])
-            im2 = Image.fromarray(rgba2, mode="RGBA")
-
-            out = io.BytesIO()
-            im2.save(out, format="PNG")
-            out.seek(0)
-
-            # Write back into the existing buffer (do not rebind 'buf')
-            buf.seek(0)
-            buf.truncate(0)
-            buf.write(out.read())
-            buf.seek(0)
-    except Exception:
-        # If anything goes wrong, fall back to the original image buffer.
-        pass
+    buf = io.BytesIO()
+    Image.fromarray(rgba, mode="RGBA").save(buf, format="PNG", compress_level=6)
 
     plt.close(fig)
-    gc.collect()
     return buf.getvalue()
 
 # ----------------------------
